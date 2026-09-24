@@ -1,0 +1,10 @@
+{
+  "codex": {
+    "command": "codex",
+    "enabled": true
+  },
+  "claude": {
+    "command": "claude",
+    "enabled": true
+  }
+}

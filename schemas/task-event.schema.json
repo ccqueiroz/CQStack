@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "task-event.schema.json",
+  "title": "TaskEvent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id",
+    "task_id",
+    "timestamp",
+    "actor",
+    "role",
+    "event_type",
+    "payload"
+  ],
+  "properties": {
+    "event_id": { "$ref": "common.schema.json#/definitions/id" },
+    "task_id": { "$ref": "common.schema.json#/definitions/id" },
+    "timestamp": { "$ref": "common.schema.json#/definitions/timestamp" },
+    "actor": { "$ref": "common.schema.json#/definitions/nonEmpty" },
+    "role": { "$ref": "common.schema.json#/definitions/nonEmpty" },
+    "event_type": { "$ref": "common.schema.json#/definitions/nonEmpty" },
+    "payload": { "type": "object", "additionalProperties": true }
+  }
+}

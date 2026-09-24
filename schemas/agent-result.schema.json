@@ -1,0 +1,285 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "agent-result.schema.json",
+  "title": "AgentResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "task_id",
+    "role",
+    "status",
+    "summary",
+    "changed_files",
+    "evidence",
+    "tests_executed",
+    "tests_not_executed",
+    "api_contract_status",
+    "visual_lock_status",
+    "scope_expanded",
+    "deviations",
+    "risks",
+    "known_issues",
+    "requested_followups"
+  ],
+  "properties": {
+    "task_id": {
+      "$ref": "common.schema.json#/definitions/id"
+    },
+    "role": {
+      "$ref": "common.schema.json#/definitions/nonEmpty"
+    },
+    "status": {
+      "enum": [
+        "completed",
+        "blocked",
+        "failed",
+        "needs_review",
+        "needs_contract_change",
+        "needs_scope_expansion",
+        "proposal_deviation"
+      ]
+    },
+    "summary": {
+      "type": "string"
+    },
+    "changed_files": {
+      "$ref": "common.schema.json#/definitions/pathArray"
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/definitions/evidence"
+      }
+    },
+    "tests_executed": {
+      "description": "Worker claim only; never authoritative. Harness verification records are the source of truth.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "command",
+          "exit_code",
+          "evidence"
+        ],
+        "properties": {
+          "command": {
+            "$ref": "common.schema.json#/definitions/nonEmpty"
+          },
+          "exit_code": {
+            "type": "integer"
+          },
+          "evidence": {
+            "$ref": "common.schema.json#/definitions/nonEmpty"
+          }
+        }
+      }
+    },
+    "tests_not_executed": {
+      "description": "Worker claim only; never authoritative. Harness verification records are the source of truth.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "command",
+          "reason"
+        ],
+        "properties": {
+          "command": {
+            "$ref": "common.schema.json#/definitions/nonEmpty"
+          },
+          "reason": {
+            "$ref": "common.schema.json#/definitions/nonEmpty"
+          }
+        }
+      }
+    },
+    "api_contract_status": {
+      "enum": [
+        "not_applicable",
+        "unchanged",
+        "change_requested"
+      ]
+    },
+    "visual_lock_status": {
+      "enum": [
+        "not_applicable",
+        "unchanged",
+        "approval_required"
+      ]
+    },
+    "scope_expanded": {
+      "type": "boolean"
+    },
+    "deviations": {
+      "$ref": "common.schema.json#/definitions/stringArray"
+    },
+    "risks": {
+      "$ref": "common.schema.json#/definitions/stringArray"
+    },
+    "known_issues": {
+      "$ref": "common.schema.json#/definitions/stringArray"
+    },
+    "requested_followups": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "reason",
+          "required_paths",
+          "required_behavior",
+          "impact"
+        ],
+        "properties": {
+          "reason": {
+            "$ref": "common.schema.json#/definitions/nonEmpty"
+          },
+          "required_paths": {
+            "$ref": "common.schema.json#/definitions/pathArray"
+          },
+          "required_behavior": {
+            "$ref": "common.schema.json#/definitions/nonEmpty"
+          },
+          "impact": {
+            "$ref": "common.schema.json#/definitions/nonEmpty"
+          }
+        }
+      }
+    },
+    "api_contract": {
+      "anyOf": [
+        {
+          "$ref": "api-contract.schema.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "review_result": {
+      "$ref": "review-result.schema.json"
+    },
+    "workflow_output": {
+      "anyOf": [
+        {
+          "$ref": "workflow-task-sense.schema.json"
+        },
+        {
+          "$ref": "workflow-discovery.schema.json"
+        },
+        {
+          "$ref": "workflow-flow.schema.json"
+        },
+        {
+          "$ref": "workflow-truth.schema.json"
+        },
+        {
+          "$ref": "workflow-gap.schema.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "proposal": {
+      "anyOf": [
+        {
+          "$ref": "proposal.schema.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "proposal_deviation": {
+      "anyOf": [
+        {
+          "$ref": "proposal-deviation.schema.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "role": { "const": "api-contract-architect" }, "status": { "const": "completed" } },
+        "required": ["role", "status"]
+      },
+      "then": { "required": ["api_contract"], "properties": { "api_contract": { "$ref": "api-contract.schema.json" } } }
+    },
+    {
+      "if": { "required": ["api_contract"], "properties": { "api_contract": {} } },
+      "then": { "properties": { "role": { "const": "api-contract-architect" } } }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "needs_scope_expansion"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "requested_followups": {
+            "type": "array",
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "completed",
+              "needs_review"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "evidence": {
+            "type": "array",
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "proposal_deviation"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "required": [
+          "proposal_deviation"
+        ],
+        "properties": {
+          "proposal_deviation": {
+            "$ref": "proposal-deviation.schema.json"
+          }
+        }
+      }
+    }
+  ]
+}

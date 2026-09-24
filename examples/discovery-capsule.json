@@ -1,0 +1,37 @@
+{
+  "task_id": "DEMO-1",
+  "parent_task_id": null,
+  "role": "discovery-backend",
+  "responsibility": "Inspect the declared backend HTTP route convention",
+  "goal": "Report only evidence about the parser and method declarations",
+  "inputs": [
+    "Inspect local code only; production and staging are not in scope."
+  ],
+  "required_context": [
+    "cartera-backend/src/shared/http/route-convention.spec.ts",
+    "cartera-backend/src/features/transfer/infra/http/create-transfer.route.ts"
+  ],
+  "allowed_paths": [
+    "cartera-backend/src/shared/http/route-convention.spec.ts",
+    "cartera-backend/src/features/transfer/infra/http/create-transfer.route.ts"
+  ],
+  "forbidden_paths": [
+    "cartera-frontend"
+  ],
+  "existing_patterns": [
+    "Current vertical slices are preserved."
+  ],
+  "api_contract_reference": null,
+  "visual_lock_reference": null,
+  "constraints": [
+    "No application mutation",
+    "No model call in dry-run"
+  ],
+  "acceptance_criteria": [
+    "Describe what the parser recognizes, with source evidence."
+  ],
+  "owned_tests": [],
+  "permissions": "read-only",
+  "worktree": null,
+  "expected_output": "agent-result"
+}

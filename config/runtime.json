@@ -1,0 +1,6 @@
+{
+  "state_directory": "state",
+  "timeout_ms": 300000,
+  "repositories": ["cartera-backend", "cartera-frontend"],
+  "model_execution_enabled": false
+}

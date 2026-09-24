@@ -1,0 +1,98 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "review-result.schema.json",
+  "title": "ReviewResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "task_id",
+    "reviewer",
+    "role",
+    "subject_hash",
+    "verdict",
+    "evidence",
+    "findings"
+  ],
+  "properties": {
+    "task_id": {
+      "$ref": "common.schema.json#/definitions/id"
+    },
+    "reviewer": {
+      "$ref": "common.schema.json#/definitions/nonEmpty"
+    },
+    "role": {
+      "$ref": "common.schema.json#/definitions/nonEmpty"
+    },
+    "subject_hash": {
+      "$ref": "common.schema.json#/definitions/hash"
+    },
+    "verdict": {
+      "enum": [
+        "approved",
+        "rejected",
+        "changes_required",
+        "blocked_by_future_phase",
+        "blocked"
+      ]
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/definitions/evidence"
+      },
+      "minItems": 1
+    },
+    "findings": {
+      "$ref": "common.schema.json#/definitions/stringArray"
+    },
+    "details": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "finding": {
+            "type": "string",
+            "minLength": 1
+          },
+          "severity": {
+            "enum": [
+              "blocking",
+              "warning",
+              "info"
+            ]
+          },
+          "section": {
+            "type": "string",
+            "minLength": 1
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "common.schema.json#/definitions/evidence"
+            },
+            "minItems": 1
+          },
+          "required_change": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "finding",
+          "severity",
+          "section",
+          "evidence",
+          "required_change"
+        ]
+      }
+    },
+    "future_gates": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    }
+  }
+}

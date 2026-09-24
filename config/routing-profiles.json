@@ -1,0 +1,119 @@
+{
+  "default_profile": "claude",
+  "roles": {
+    "master-orchestrator": {
+      "model_class": "orchestration",
+      "effort": "high"
+    },
+    "task-sense": {
+      "model_class": "reasoning",
+      "effort": "medium"
+    },
+    "discovery-backend": {
+      "model_class": "reasoning",
+      "effort": "medium"
+    },
+    "discovery-frontend": {
+      "model_class": "reasoning",
+      "effort": "medium"
+    },
+    "discovery-design-system": {
+      "model_class": "reasoning",
+      "effort": "medium"
+    },
+    "flow": {
+      "model_class": "reasoning",
+      "effort": "medium"
+    },
+    "truth": {
+      "model_class": "reasoning",
+      "effort": "medium"
+    },
+    "gap": {
+      "model_class": "reasoning",
+      "effort": "medium"
+    },
+    "api-contract-architect": {
+      "model_class": "deep-reasoning",
+      "effort": "high"
+    },
+    "api-contract-backend-reviewer": {
+      "model_class": "reasoning",
+      "effort": "medium"
+    },
+    "api-contract-frontend-reviewer": {
+      "model_class": "reasoning",
+      "effort": "medium"
+    },
+    "backend-worker": {
+      "model_class": "reasoning",
+      "effort": "medium"
+    },
+    "frontend-worker": {
+      "model_class": "reasoning",
+      "effort": "medium"
+    },
+    "visual-architect": {
+      "model_class": "deep-reasoning",
+      "effort": "high"
+    },
+    "visual-worker": {
+      "model_class": "reasoning",
+      "effort": "medium"
+    },
+    "test-worker": {
+      "model_class": "reasoning",
+      "effort": "medium"
+    },
+    "ux-guardian": {
+      "model_class": "reasoning",
+      "effort": "medium"
+    },
+    "adversarial-reviewer": {
+      "model_class": "deep-reasoning",
+      "effort": "high"
+    },
+    "mechanical-worker": {
+      "model_class": "mechanical",
+      "effort": "low"
+    },
+    "provider-smoke-claude": {
+      "model_class": "mechanical",
+      "effort": "low"
+    },
+    "discovery-tests": {
+      "model_class": "reasoning",
+      "effort": "medium"
+    },
+    "opsx-proposer": {
+      "model_class": "deep-reasoning",
+      "effort": "high"
+    },
+    "opsx-propose-reviewer": {
+      "model_class": "reasoning",
+      "effort": "medium"
+    },
+    "opsx-implementation-worker": {
+      "model_class": "reasoning",
+      "effort": "medium"
+    },
+    "opsx-apply-reviewer": {
+      "model_class": "reasoning",
+      "effort": "medium"
+    }
+  },
+  "profiles": {
+    "claude": {
+      "orchestration": "fable-5.1",
+      "reasoning": "opus-5.5",
+      "deep-reasoning": "opus-5.5",
+      "mechanical": "sonnet-5"
+    },
+    "codex": {
+      "orchestration": "astra",
+      "reasoning": "sol",
+      "deep-reasoning": "sol",
+      "mechanical": "luna"
+    }
+  }
+}

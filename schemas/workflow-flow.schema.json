@@ -1,0 +1,307 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "workflow-flow.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "stage": {
+      "const": "flow"
+    },
+    "content": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "entry_points": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "assertion": {
+                "type": "string",
+                "minLength": 1
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "common.schema.json#/definitions/evidence"
+                },
+                "minItems": 1
+              }
+            },
+            "required": [
+              "id",
+              "assertion",
+              "evidence"
+            ]
+          }
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "assertion": {
+                "type": "string",
+                "minLength": 1
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "common.schema.json#/definitions/evidence"
+                },
+                "minItems": 1
+              }
+            },
+            "required": [
+              "id",
+              "assertion",
+              "evidence"
+            ]
+          }
+        },
+        "components": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "assertion": {
+                "type": "string",
+                "minLength": 1
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "common.schema.json#/definitions/evidence"
+                },
+                "minItems": 1
+              }
+            },
+            "required": [
+              "id",
+              "assertion",
+              "evidence"
+            ]
+          }
+        },
+        "data_transformations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "assertion": {
+                "type": "string",
+                "minLength": 1
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "common.schema.json#/definitions/evidence"
+                },
+                "minItems": 1
+              }
+            },
+            "required": [
+              "id",
+              "assertion",
+              "evidence"
+            ]
+          }
+        },
+        "side_effects": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "assertion": {
+                "type": "string",
+                "minLength": 1
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "common.schema.json#/definitions/evidence"
+                },
+                "minItems": 1
+              }
+            },
+            "required": [
+              "id",
+              "assertion",
+              "evidence"
+            ]
+          }
+        },
+        "external_dependencies": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "assertion": {
+                "type": "string",
+                "minLength": 1
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "common.schema.json#/definitions/evidence"
+                },
+                "minItems": 1
+              }
+            },
+            "required": [
+              "id",
+              "assertion",
+              "evidence"
+            ]
+          }
+        },
+        "error_paths": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "assertion": {
+                "type": "string",
+                "minLength": 1
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "common.schema.json#/definitions/evidence"
+                },
+                "minItems": 1
+              }
+            },
+            "required": [
+              "id",
+              "assertion",
+              "evidence"
+            ]
+          }
+        },
+        "frontend_backend_edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "assertion": {
+                "type": "string",
+                "minLength": 1
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "common.schema.json#/definitions/evidence"
+                },
+                "minItems": 1
+              }
+            },
+            "required": [
+              "id",
+              "assertion",
+              "evidence"
+            ]
+          }
+        },
+        "persistence_edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "assertion": {
+                "type": "string",
+                "minLength": 1
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "common.schema.json#/definitions/evidence"
+                },
+                "minItems": 1
+              }
+            },
+            "required": [
+              "id",
+              "assertion",
+              "evidence"
+            ]
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/definitions/evidence"
+          }
+        },
+        "unknowns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "entry_points",
+        "steps",
+        "components",
+        "data_transformations",
+        "side_effects",
+        "external_dependencies",
+        "error_paths",
+        "frontend_backend_edges",
+        "persistence_edges",
+        "evidence",
+        "unknowns"
+      ]
+    }
+  },
+  "required": [
+    "stage",
+    "content"
+  ]
+}

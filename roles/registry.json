@@ -1,0 +1,497 @@
+[
+  {
+    "role": "master-orchestrator",
+    "purpose": "Coordinate capsules and independent review through the bus",
+    "allowed_capabilities": [
+      "read",
+      "return-result",
+      "delegate",
+      "transition",
+      "lock"
+    ],
+    "mutation_permission": "read-only",
+    "required_artifacts": [
+      "task-capsule"
+    ],
+    "expected_output_schema": "agent-result",
+    "governance": [
+      "agent-behavior.md",
+      "api-contract.md",
+      "core.md",
+      "scope.md",
+      "testing.md",
+      "visual.md"
+    ]
+  },
+  {
+    "role": "task-sense",
+    "purpose": "Classify only the supplied request",
+    "allowed_capabilities": [
+      "read",
+      "return-result"
+    ],
+    "mutation_permission": "read-only",
+    "required_artifacts": [
+      "task-capsule"
+    ],
+    "expected_output_schema": "agent-result",
+    "governance": [
+      "agent-behavior.md",
+      "core.md",
+      "scope.md"
+    ]
+  },
+  {
+    "role": "discovery-backend",
+    "purpose": "Inspect backend code and evidence",
+    "allowed_capabilities": [
+      "read",
+      "return-result"
+    ],
+    "mutation_permission": "read-only",
+    "required_artifacts": [
+      "task-capsule"
+    ],
+    "expected_output_schema": "agent-result",
+    "governance": [
+      "agent-behavior.md",
+      "core.md",
+      "scope.md"
+    ]
+  },
+  {
+    "role": "discovery-frontend",
+    "purpose": "Inspect frontend code and evidence",
+    "allowed_capabilities": [
+      "read",
+      "return-result"
+    ],
+    "mutation_permission": "read-only",
+    "required_artifacts": [
+      "task-capsule"
+    ],
+    "expected_output_schema": "agent-result",
+    "governance": [
+      "agent-behavior.md",
+      "core.md",
+      "scope.md"
+    ]
+  },
+  {
+    "role": "discovery-design-system",
+    "purpose": "Inspect reusable design-system evidence",
+    "allowed_capabilities": [
+      "read",
+      "return-result"
+    ],
+    "mutation_permission": "read-only",
+    "required_artifacts": [
+      "task-capsule"
+    ],
+    "expected_output_schema": "agent-result",
+    "governance": [
+      "agent-behavior.md",
+      "core.md",
+      "scope.md",
+      "visual.md"
+    ]
+  },
+  {
+    "role": "flow",
+    "purpose": "Describe verified user and system flows",
+    "allowed_capabilities": [
+      "read",
+      "return-result"
+    ],
+    "mutation_permission": "read-only",
+    "required_artifacts": [
+      "task-capsule"
+    ],
+    "expected_output_schema": "agent-result",
+    "governance": [
+      "agent-behavior.md",
+      "core.md",
+      "scope.md"
+    ]
+  },
+  {
+    "role": "truth",
+    "purpose": "Independently verify assertions against code",
+    "allowed_capabilities": [
+      "read",
+      "return-result"
+    ],
+    "mutation_permission": "read-only",
+    "required_artifacts": [
+      "task-capsule"
+    ],
+    "expected_output_schema": "agent-result",
+    "governance": [
+      "agent-behavior.md",
+      "core.md",
+      "scope.md"
+    ]
+  },
+  {
+    "role": "gap",
+    "purpose": "Compare requested behavior to verified behavior",
+    "allowed_capabilities": [
+      "read",
+      "return-result"
+    ],
+    "mutation_permission": "read-only",
+    "required_artifacts": [
+      "task-capsule"
+    ],
+    "expected_output_schema": "agent-result",
+    "governance": [
+      "agent-behavior.md",
+      "core.md",
+      "scope.md"
+    ]
+  },
+  {
+    "role": "api-contract-architect",
+    "purpose": "Define frontend/backend HTTP contract artifact",
+    "allowed_capabilities": [
+      "read",
+      "return-result"
+    ],
+    "mutation_permission": "read-only",
+    "required_artifacts": [
+      "task-capsule"
+    ],
+    "expected_output_schema": "agent-result",
+    "governance": [
+      "agent-behavior.md",
+      "api-contract.md",
+      "core.md",
+      "scope.md"
+    ]
+  },
+  {
+    "role": "api-contract-backend-reviewer",
+    "purpose": "Review HTTP contract from backend perspective",
+    "allowed_capabilities": [
+      "read",
+      "return-result"
+    ],
+    "mutation_permission": "read-only",
+    "required_artifacts": [
+      "task-capsule",
+      "api-contract"
+    ],
+    "expected_output_schema": "agent-result",
+    "governance": [
+      "agent-behavior.md",
+      "api-contract.md",
+      "core.md",
+      "scope.md"
+    ]
+  },
+  {
+    "role": "api-contract-frontend-reviewer",
+    "purpose": "Review HTTP contract from frontend perspective",
+    "allowed_capabilities": [
+      "read",
+      "return-result"
+    ],
+    "mutation_permission": "read-only",
+    "required_artifacts": [
+      "task-capsule",
+      "api-contract"
+    ],
+    "expected_output_schema": "agent-result",
+    "governance": [
+      "agent-behavior.md",
+      "api-contract.md",
+      "core.md",
+      "scope.md"
+    ]
+  },
+  {
+    "role": "backend-worker",
+    "purpose": "Implement one backend responsibility",
+    "allowed_capabilities": [
+      "read",
+      "return-result",
+      "write-scoped"
+    ],
+    "mutation_permission": "restricted-path-write",
+    "required_artifacts": [
+      "task-capsule"
+    ],
+    "expected_output_schema": "agent-result",
+    "governance": [
+      "agent-behavior.md",
+      "api-contract.md",
+      "core.md",
+      "scope.md",
+      "testing.md"
+    ]
+  },
+  {
+    "role": "frontend-worker",
+    "purpose": "Implement one frontend responsibility",
+    "allowed_capabilities": [
+      "read",
+      "return-result",
+      "write-scoped"
+    ],
+    "mutation_permission": "restricted-path-write",
+    "required_artifacts": [
+      "task-capsule"
+    ],
+    "expected_output_schema": "agent-result",
+    "governance": [
+      "agent-behavior.md",
+      "api-contract.md",
+      "core.md",
+      "scope.md",
+      "testing.md",
+      "visual.md"
+    ]
+  },
+  {
+    "role": "visual-architect",
+    "purpose": "Propose visual design as an artifact",
+    "allowed_capabilities": [
+      "read",
+      "return-result"
+    ],
+    "mutation_permission": "read-only",
+    "required_artifacts": [
+      "task-capsule"
+    ],
+    "expected_output_schema": "agent-result",
+    "governance": [
+      "agent-behavior.md",
+      "core.md",
+      "scope.md",
+      "visual.md"
+    ]
+  },
+  {
+    "role": "visual-worker",
+    "purpose": "Implement approved visual responsibility",
+    "allowed_capabilities": [
+      "read",
+      "return-result",
+      "write-scoped"
+    ],
+    "mutation_permission": "restricted-path-write",
+    "required_artifacts": [
+      "task-capsule",
+      "visual-lock"
+    ],
+    "expected_output_schema": "agent-result",
+    "governance": [
+      "agent-behavior.md",
+      "core.md",
+      "scope.md",
+      "testing.md",
+      "visual.md"
+    ]
+  },
+  {
+    "role": "test-worker",
+    "purpose": "Execute owned verification responsibility",
+    "allowed_capabilities": [
+      "read",
+      "return-result",
+      "write-scoped"
+    ],
+    "mutation_permission": "restricted-path-write",
+    "required_artifacts": [
+      "task-capsule"
+    ],
+    "expected_output_schema": "agent-result",
+    "governance": [
+      "agent-behavior.md",
+      "core.md",
+      "scope.md",
+      "testing.md"
+    ]
+  },
+  {
+    "role": "ux-guardian",
+    "purpose": "Assess supplied UX evidence; browser execution deferred",
+    "allowed_capabilities": [
+      "read",
+      "return-result"
+    ],
+    "mutation_permission": "read-only",
+    "required_artifacts": [
+      "task-capsule"
+    ],
+    "expected_output_schema": "agent-result",
+    "governance": [
+      "agent-behavior.md",
+      "core.md",
+      "scope.md",
+      "testing.md",
+      "visual.md"
+    ]
+  },
+  {
+    "role": "adversarial-reviewer",
+    "purpose": "Challenge supplied implementation evidence independently",
+    "allowed_capabilities": [
+      "read",
+      "return-result"
+    ],
+    "mutation_permission": "read-only",
+    "required_artifacts": [
+      "task-capsule"
+    ],
+    "expected_output_schema": "agent-result",
+    "governance": [
+      "agent-behavior.md",
+      "api-contract.md",
+      "core.md",
+      "scope.md",
+      "testing.md",
+      "visual.md"
+    ]
+  },
+  {
+    "role": "mechanical-worker",
+    "purpose": "Perform one bounded mechanical change",
+    "allowed_capabilities": [
+      "read",
+      "return-result",
+      "write-scoped"
+    ],
+    "mutation_permission": "restricted-path-write",
+    "required_artifacts": [
+      "task-capsule"
+    ],
+    "expected_output_schema": "agent-result",
+    "governance": [
+      "agent-behavior.md",
+      "core.md",
+      "scope.md",
+      "testing.md"
+    ]
+  },
+  {
+    "role": "provider-smoke-claude",
+    "purpose": "Inspect only the harness README during an authorized provider smoke",
+    "allowed_capabilities": [
+      "read",
+      "return-result"
+    ],
+    "mutation_permission": "read-only",
+    "required_artifacts": [
+      "task-capsule"
+    ],
+    "expected_output_schema": "agent-result",
+    "governance": [
+      "agent-behavior.md",
+      "core.md",
+      "scope.md"
+    ]
+  },
+  {
+    "role": "discovery-tests",
+    "purpose": "Inspect only local tests for a scoped behavior",
+    "allowed_capabilities": [
+      "read",
+      "return-result"
+    ],
+    "mutation_permission": "read-only",
+    "required_artifacts": [
+      "task-capsule"
+    ],
+    "expected_output_schema": "agent-result",
+    "governance": [
+      "agent-behavior.md",
+      "core.md",
+      "scope.md",
+      "testing.md"
+    ]
+  },
+  {
+    "role": "opsx-proposer",
+    "purpose": "Design the smallest proposal that solves verified Gap and implements the explicit PO decision",
+    "allowed_capabilities": [
+      "read",
+      "return-result"
+    ],
+    "mutation_permission": "read-only",
+    "required_artifacts": [
+      "task-capsule"
+    ],
+    "expected_output_schema": "agent-result",
+    "governance": [
+      "agent-behavior.md",
+      "api-contract.md",
+      "core.md",
+      "scope.md",
+      "testing.md",
+      "visual.md"
+    ]
+  },
+  {
+    "role": "opsx-propose-reviewer",
+    "purpose": "Independently review proposal scope, evidence, units, decisions and future requirements",
+    "allowed_capabilities": [
+      "read",
+      "return-result"
+    ],
+    "mutation_permission": "read-only",
+    "required_artifacts": [
+      "task-capsule"
+    ],
+    "expected_output_schema": "agent-result",
+    "governance": [
+      "agent-behavior.md",
+      "api-contract.md",
+      "core.md",
+      "scope.md",
+      "testing.md",
+      "visual.md"
+    ]
+  },
+  {
+    "role": "opsx-implementation-worker",
+    "purpose": "Implement one approved proposal unit in an owned worktree",
+    "allowed_capabilities": [
+      "read",
+      "return-result",
+      "write-scoped"
+    ],
+    "mutation_permission": "restricted-path-write",
+    "required_artifacts": [
+      "task-capsule"
+    ],
+    "expected_output_schema": "agent-result",
+    "governance": [
+      "agent-behavior.md",
+      "core.md",
+      "scope.md",
+      "testing.md"
+    ]
+  },
+  {
+    "role": "opsx-apply-reviewer",
+    "purpose": "Independently inspect approved proposal, diff, test outputs and implementation scope",
+    "allowed_capabilities": [
+      "read",
+      "return-result"
+    ],
+    "mutation_permission": "read-only",
+    "required_artifacts": [
+      "task-capsule"
+    ],
+    "expected_output_schema": "agent-result",
+    "governance": [
+      "agent-behavior.md",
+      "api-contract.md",
+      "core.md",
+      "scope.md",
+      "testing.md",
+      "visual.md"
+    ]
+  }
+]

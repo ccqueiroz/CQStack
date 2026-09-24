@@ -1,0 +1,154 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "workflow-truth.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "stage": {
+      "const": "truth"
+    },
+    "content": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "confirmed": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "assertion": {
+                "type": "string",
+                "minLength": 1
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "common.schema.json#/definitions/evidence"
+                },
+                "minItems": 1
+              }
+            },
+            "required": [
+              "id",
+              "assertion",
+              "evidence"
+            ]
+          }
+        },
+        "rejected": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "assertion": {
+                "type": "string",
+                "minLength": 1
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "common.schema.json#/definitions/evidence"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "assertion",
+              "evidence"
+            ]
+          }
+        },
+        "contradicted": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "assertion": {
+                "type": "string",
+                "minLength": 1
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "common.schema.json#/definitions/evidence"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "assertion",
+              "evidence"
+            ]
+          }
+        },
+        "unverified": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "assertion": {
+                "type": "string",
+                "minLength": 1
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "common.schema.json#/definitions/evidence"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "assertion",
+              "evidence"
+            ]
+          }
+        },
+        "missing_evidence": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "actual_system_truth": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "confirmed",
+        "rejected",
+        "contradicted",
+        "unverified",
+        "missing_evidence",
+        "actual_system_truth"
+      ]
+    }
+  },
+  "required": [
+    "stage",
+    "content"
+  ]
+}

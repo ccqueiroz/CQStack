@@ -1,0 +1,79 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "api-contract.schema.json",
+  "title": "ApiContract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_id",
+    "task_id",
+    "version",
+    "method",
+    "path",
+    "path_parameters",
+    "query_parameters",
+    "headers",
+    "request_body",
+    "success_status",
+    "success_schema",
+    "errors",
+    "nullable_semantics",
+    "optional_semantics",
+    "dates",
+    "money",
+    "enums",
+    "pagination"
+  ],
+  "properties": {
+    "contract_id": { "$ref": "common.schema.json#/definitions/id" },
+    "task_id": { "$ref": "common.schema.json#/definitions/id" },
+    "version": { "$ref": "common.schema.json#/definitions/nonEmpty" },
+    "method": { "type": "string", "pattern": "^[A-Z]+$" },
+    "path": { "type": "string", "pattern": "^/" },
+    "path_parameters": { "$ref": "#/definitions/jsonSchema" },
+    "query_parameters": { "$ref": "#/definitions/jsonSchema" },
+    "headers": { "$ref": "#/definitions/jsonSchema" },
+    "request_body": {
+      "anyOf": [{ "$ref": "#/definitions/jsonSchema" }, { "type": "null" }]
+    },
+    "success_status": { "type": "integer", "minimum": 100, "maximum": 599 },
+    "success_schema": {
+      "anyOf": [{ "$ref": "#/definitions/jsonSchema" }, { "type": "null" }]
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status", "code", "schema"],
+        "properties": {
+          "status": { "type": "integer", "minimum": 100, "maximum": 599 },
+          "code": { "$ref": "common.schema.json#/definitions/nonEmpty" },
+          "schema": { "$ref": "#/definitions/jsonSchema" }
+        }
+      }
+    },
+    "nullable_semantics": {
+      "$ref": "common.schema.json#/definitions/nonEmpty"
+    },
+    "optional_semantics": {
+      "$ref": "common.schema.json#/definitions/nonEmpty"
+    },
+    "dates": { "$ref": "common.schema.json#/definitions/nonEmpty" },
+    "money": { "$ref": "common.schema.json#/definitions/nonEmpty" },
+    "enums": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string" },
+        "uniqueItems": true
+      }
+    },
+    "pagination": {
+      "anyOf": [{ "$ref": "#/definitions/jsonSchema" }, { "type": "null" }]
+    }
+  },
+  "definitions": {
+    "jsonSchema": { "type": "object", "additionalProperties": true }
+  }
+}

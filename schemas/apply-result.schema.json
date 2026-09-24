@@ -1,0 +1,324 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "apply-result.schema.json",
+  "oneOf": [
+    {
+      "$ref": "#/definitions/legacy"
+    },
+    {
+      "$ref": "#/definitions/v2"
+    }
+  ],
+  "definitions": {
+    "legacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "proposal_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "implementation_unit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "task_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "enum": [
+            "completed",
+            "blocked",
+            "failed",
+            "needs_scope_expansion",
+            "proposal_deviation"
+          ]
+        },
+        "changed_files": {
+          "$ref": "common.schema.json#/definitions/pathArray"
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/definitions/evidence"
+          }
+        },
+        "deviations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "scope_expansion_requested": {
+          "type": "boolean"
+        },
+        "known_issues": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "worktree": {
+          "$ref": "common.schema.json#/definitions/worktree"
+        },
+        "checkpoint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "verification_hash": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tests_executed": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string",
+                "minLength": 1
+              },
+              "exit_code": {
+                "type": "integer"
+              },
+              "evidence": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "command",
+              "exit_code",
+              "evidence"
+            ]
+          }
+        },
+        "tests_not_executed": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string",
+                "minLength": 1
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "command",
+              "reason"
+            ]
+          }
+        }
+      },
+      "required": [
+        "proposal_id",
+        "implementation_unit",
+        "task_id",
+        "status",
+        "changed_files",
+        "tests_executed",
+        "tests_not_executed",
+        "evidence",
+        "deviations",
+        "scope_expansion_requested",
+        "known_issues",
+        "worktree",
+        "checkpoint",
+        "verification_hash"
+      ]
+    },
+    "v2": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "const": 2
+        },
+        "proposal_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "implementation_unit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "task_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "enum": [
+            "completed",
+            "blocked",
+            "failed",
+            "needs_scope_expansion",
+            "proposal_deviation"
+          ]
+        },
+        "changed_files": {
+          "$ref": "common.schema.json#/definitions/pathArray"
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/definitions/evidence"
+          }
+        },
+        "deviations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "scope_expansion_requested": {
+          "type": "boolean"
+        },
+        "known_issues": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "worktree": {
+          "$ref": "common.schema.json#/definitions/worktree"
+        },
+        "checkpoint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "verification_hash": {
+          "type": "string",
+          "minLength": 1
+        },
+        "verification": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "passed",
+            "commands"
+          ],
+          "properties": {
+            "passed": {
+              "type": "boolean"
+            },
+            "commands": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "command",
+                  "exit_code"
+                ],
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "exit_code": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "worker_claims": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "tests_executed",
+            "tests_not_executed"
+          ],
+          "properties": {
+            "tests_executed": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "exit_code": {
+                    "type": "integer"
+                  },
+                  "evidence": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "command",
+                  "exit_code",
+                  "evidence"
+                ]
+              }
+            },
+            "tests_not_executed": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "command",
+                  "reason"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "required": [
+        "version",
+        "proposal_id",
+        "implementation_unit",
+        "task_id",
+        "status",
+        "changed_files",
+        "evidence",
+        "deviations",
+        "scope_expansion_requested",
+        "known_issues",
+        "worktree",
+        "checkpoint",
+        "verification_hash",
+        "verification",
+        "worker_claims"
+      ]
+    }
+  }
+}

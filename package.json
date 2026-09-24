@@ -1,0 +1,16 @@
+{
+  "name": "@cartera/harness",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test dist/runtime/tests/*.test.js",
+    "cli": "node dist/cli/main.js",
+    "doctor": "npm run cli -- doctor",
+    "mcp": "node dist/mcp/server.js"
+  },
+  "dependencies": { "ajv": "8.17.1", "@modelcontextprotocol/sdk": "1.26.0" },
+  "devDependencies": { "typescript": "5.9.3", "@types/node": "20.19.9" }
+}

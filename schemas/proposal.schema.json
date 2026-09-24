@@ -1,0 +1,294 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "proposal.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "proposal_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "root_task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3
+    },
+    "previous_proposal_hash": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "goal": {
+      "type": "string",
+      "minLength": 1
+    },
+    "verified_gap_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "child_task": {
+            "type": "string",
+            "minLength": 1
+          },
+          "content_hash": {
+            "$ref": "common.schema.json#/definitions/hash"
+          }
+        },
+        "required": [
+          "child_task",
+          "content_hash"
+        ]
+      }
+    },
+    "solution_summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "no_op": {
+      "type": "boolean"
+    },
+    "affected_repositories": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "affected_slices": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "affected_files_or_areas": {
+      "$ref": "common.schema.json#/definitions/pathArray"
+    },
+    "implementation_units": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,19}$"
+          },
+          "role": {
+            "enum": ["opsx-implementation-worker", "frontend-worker", "backend-worker"]
+          },
+          "repository": {
+            "type": "string",
+            "minLength": 1
+          },
+          "responsibility": {
+            "type": "string",
+            "minLength": 1
+          },
+          "allowed_paths": {
+            "$ref": "common.schema.json#/definitions/pathArray"
+          },
+          "forbidden_paths": {
+            "$ref": "common.schema.json#/definitions/pathArray"
+          },
+          "acceptance_criteria": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true
+          },
+          "owned_test_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true
+          },
+          "depends_on": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "common.schema.json#/definitions/evidence"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "id",
+          "role",
+          "repository",
+          "responsibility",
+          "allowed_paths",
+          "forbidden_paths",
+          "acceptance_criteria",
+          "owned_test_ids",
+          "depends_on",
+          "evidence"
+        ]
+      }
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "ordering": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "parallelizable_units": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        },
+        "uniqueItems": true
+      }
+    },
+    "tests_required": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "unit_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "command": {
+            "const": "node"
+          },
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 2
+          },
+          "purpose": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id",
+          "unit_id",
+          "command",
+          "args",
+          "purpose"
+        ]
+      }
+    },
+    "risks": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "scope_boundaries": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "out_of_scope": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "requires_api_contract": {
+      "type": "boolean"
+    },
+    "requires_visual_approval": {
+      "type": "boolean"
+    },
+    "requires_database_change": {
+      "type": "boolean"
+    },
+    "requires_external_resource": {
+      "type": "boolean"
+    },
+    "open_decisions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/definitions/evidence"
+      },
+      "minItems": 1
+    }
+  },
+  "required": [
+    "proposal_id",
+    "root_task_id",
+    "version",
+    "previous_proposal_hash",
+    "goal",
+    "verified_gap_refs",
+    "solution_summary",
+    "no_op",
+    "affected_repositories",
+    "affected_slices",
+    "affected_files_or_areas",
+    "implementation_units",
+    "dependencies",
+    "ordering",
+    "parallelizable_units",
+    "tests_required",
+    "risks",
+    "scope_boundaries",
+    "out_of_scope",
+    "requires_api_contract",
+    "requires_visual_approval",
+    "requires_database_change",
+    "requires_external_resource",
+    "open_decisions",
+    "evidence"
+  ]
+}

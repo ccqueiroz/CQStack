@@ -1,0 +1,9 @@
+{
+  "concurrency": 2,
+  "timeout_ms": 180000,
+  "max_context_bytes": 48000,
+  "provider_smoke_tasks": [
+    "P2C-SMOKE-CODEX-20260924-02",
+    "P2C-SMOKE-CLAUDE-20260924-02"
+  ]
+}

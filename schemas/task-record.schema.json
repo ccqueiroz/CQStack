@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "task-record.schema.json",
+  "title": "TaskRecord",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["capsule", "state", "revision", "updated_at"],
+  "properties": {
+    "capsule": { "$ref": "task-capsule.schema.json" },
+    "state": {
+      "enum": [
+        "TASK_RECEIVED",
+        "TASK_CLASSIFIED",
+        "TASK_SENSE_COMPLETE",
+        "DISCOVERY_COMPLETE",
+        "FLOW_COMPLETE",
+        "TRUTH_VERIFIED",
+        "GAP_DEFINED",
+        "PROPOSAL_CREATED",
+        "PROPOSAL_APPROVED",
+        "API_CONTRACT_REQUIRED",
+        "API_CONTRACT_DEFINED",
+        "API_CONTRACT_REVIEWED",
+        "API_CONTRACT_LOCKED",
+        "VISUAL_REVIEW_REQUIRED",
+        "WAITING_FOR_VISUAL_APPROVAL",
+        "VISUAL_LOCKED",
+        "IMPLEMENTATION_RUNNING",
+        "LOCAL_VERIFICATION",
+        "INTEGRATION",
+        "FEATURE_E2E",
+        "UX_REVIEW",
+        "ADVERSARIAL_REVIEW",
+        "REVIEW_GATE_APPLY",
+        "DONE",
+        "BLOCKED",
+        "FAILED"
+      ]
+    },
+    "revision": { "type": "integer", "minimum": 0 },
+    "updated_at": { "$ref": "common.schema.json#/definitions/timestamp" }
+  }
+}

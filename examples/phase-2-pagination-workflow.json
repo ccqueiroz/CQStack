@@ -1,0 +1,42 @@
+{
+  "task_id": "PHASE2-PAGINATION",
+  "user_request": "Verifique somente pelo código local se applyPagination usa página padrão 0 e tamanho padrão 20, retorna a fatia pedida e mantém totalElements igual ao tamanho do conjunto recebido antes da fatia. Confira os testes existentes e descreva o fluxo atual da função até o envelope Page. Não solicito alteração de produto nem novos testes. Identifique apenas lacunas verificadas em relação a esse comportamento; ausência de cobertura não prova ausência de comportamento. Não analisar chamadores, HTTP, banco, valores inválidos ou ambientes remotos.",
+  "task_type": "analysis",
+  "repository_scope": [
+    "cartera-backend"
+  ],
+  "allowed_paths": [
+    "cartera-backend/src/shared/query/apply-pagination.ts",
+    "cartera-backend/src/shared/query/page.ts",
+    "cartera-backend/src/shared/query/apply-pagination.spec.ts"
+  ],
+  "forbidden_paths": [
+    "cartera-frontend",
+    "cartera-backend/.git",
+    "cartera-backend/.env",
+    "cartera-backend/node_modules"
+  ],
+  "constraints": [
+    "READ_ONLY",
+    "No production or staging access",
+    "No product implementation or test execution",
+    "Limit findings to at most six claims per artifact; use concise evidence."
+  ],
+  "discovery": [
+    {
+      "name": "discovery-implementation",
+      "role": "discovery-backend",
+      "paths": [
+        "cartera-backend/src/shared/query/apply-pagination.ts",
+        "cartera-backend/src/shared/query/page.ts"
+      ]
+    },
+    {
+      "name": "discovery-tests",
+      "role": "discovery-tests",
+      "paths": [
+        "cartera-backend/src/shared/query/apply-pagination.spec.ts"
+      ]
+    }
+  ]
+}

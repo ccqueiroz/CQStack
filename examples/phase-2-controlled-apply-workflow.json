@@ -1,0 +1,41 @@
+{
+  "task_id": "PHASE2-CONTROLLED-APPLY",
+  "user_request": "No fixture controlado, corrigir paginate para usar page=0 e size=20 quando os argumentos forem omitidos, preservando o comportamento com argumentos explícitos, totalElements anterior à fatia e o envelope existente. Acrescentar teste de regressão focado. Não alterar nenhuma aplicação Cartera, não adicionar dependências, serviços, API, visual ou banco. A implementação posterior será exclusivamente em worktree próprio do fixture.",
+  "task_type": "fixture-validation",
+  "repository_scope": [
+    ".cartera/harness/state/fixtures/apply-demo"
+  ],
+  "allowed_paths": [
+    ".cartera/harness/state/fixtures/apply-demo/src/pagination.mjs",
+    ".cartera/harness/state/fixtures/apply-demo/tests/pagination.test.mjs"
+  ],
+  "forbidden_paths": [
+    "cartera-backend",
+    "cartera-frontend"
+  ],
+  "constraints": [
+    "Somente o fixture controlado; nenhuma mutação de aplicação Cartera.",
+    "Workers somente leitura devem usar comandos sem arquivos temporários: cat, rg, sed, nl, python3 -c ou node -e; não usar here-documents, here-strings ou redirecionamentos de saída.",
+    "Nenhum recurso externo, contrato HTTP, banco, alteração visual, dependência ou mudança de política de produto.",
+    "Preservar argumentos explícitos e totalElements anterior à fatia; evitar refactors e mudanças não solicitadas.",
+    "Escopo do Discovery de implementação: verificar o comportamento da função usando somente os dois arquivos permitidos, inclusive o teste existente como evidência. O outro filho inspeciona cobertura de testes. Não enumerar diretórios ou usar Glob para criar afirmações sobre ausência global.",
+    "Cada evidence.source de Discovery, Flow ou Truth deve usar SOMENTE um dos dois arquivos de allowed_paths seguido de :numero_da_linha. Não citar comandos, Glob, original-task, diretórios, paths sem linha, nem ausência de outros arquivos. Cada evidência deve ser conferida no código autorizado. Task Sense pode usar original-task."
+  ],
+  "discovery": [
+    {
+      "name": "discovery-implementation",
+      "role": "discovery-backend",
+      "paths": [
+        ".cartera/harness/state/fixtures/apply-demo/src/pagination.mjs",
+        ".cartera/harness/state/fixtures/apply-demo/tests/pagination.test.mjs"
+      ]
+    },
+    {
+      "name": "discovery-tests",
+      "role": "discovery-tests",
+      "paths": [
+        ".cartera/harness/state/fixtures/apply-demo/tests/pagination.test.mjs"
+      ]
+    }
+  ]
+}

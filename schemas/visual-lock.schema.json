@@ -1,0 +1,93 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "visual-lock.schema.json",
+  "title": "VisualLock",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "lock_id",
+    "task_id",
+    "version",
+    "content_hash",
+    "stories",
+    "viewports",
+    "hierarchy",
+    "responsive",
+    "interactions",
+    "design_components",
+    "baselines",
+    "approval"
+  ],
+  "properties": {
+    "lock_id": { "$ref": "common.schema.json#/definitions/id" },
+    "task_id": { "$ref": "common.schema.json#/definitions/id" },
+    "version": { "$ref": "common.schema.json#/definitions/nonEmpty" },
+    "content_hash": { "$ref": "common.schema.json#/definitions/hash" },
+    "stories": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "path"],
+        "properties": {
+          "id": { "$ref": "common.schema.json#/definitions/id" },
+          "path": { "$ref": "common.schema.json#/definitions/relativePath" }
+        }
+      }
+    },
+    "viewports": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "width", "height"],
+        "properties": {
+          "id": { "$ref": "common.schema.json#/definitions/id" },
+          "width": { "type": "integer", "minimum": 1 },
+          "height": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    "hierarchy": {
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/definitions/nonEmpty" }
+    },
+    "responsive": {
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/definitions/nonEmpty" }
+    },
+    "interactions": {
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/definitions/nonEmpty" }
+    },
+    "design_components": {
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/definitions/nonEmpty" }
+    },
+    "baselines": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["story_id", "viewport_id", "artifact"],
+        "properties": {
+          "story_id": { "$ref": "common.schema.json#/definitions/id" },
+          "viewport_id": { "$ref": "common.schema.json#/definitions/id" },
+          "artifact": { "$ref": "common.schema.json#/definitions/relativePath" }
+        }
+      }
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actor", "timestamp"],
+      "properties": {
+        "actor": { "$ref": "common.schema.json#/definitions/nonEmpty" },
+        "timestamp": { "$ref": "common.schema.json#/definitions/timestamp" }
+      }
+    }
+  }
+}

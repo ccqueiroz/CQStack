@@ -1,0 +1,95 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "workflow-task-sense.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "stage": {
+      "const": "task-sense"
+    },
+    "content": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "intent": {
+          "type": "string"
+        },
+        "explicit_requirements": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "implicit_requirements": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "out_of_scope": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ambiguities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "question": {
+                "type": "string"
+              },
+              "blocking": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "question",
+              "blocking"
+            ]
+          }
+        },
+        "likely_domains": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "likely_frontend_impact": {
+          "type": "boolean"
+        },
+        "likely_backend_impact": {
+          "type": "boolean"
+        },
+        "possible_api_impact": {
+          "type": "boolean"
+        },
+        "possible_visual_impact": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "intent",
+        "explicit_requirements",
+        "implicit_requirements",
+        "out_of_scope",
+        "ambiguities",
+        "likely_domains",
+        "likely_frontend_impact",
+        "likely_backend_impact",
+        "possible_api_impact",
+        "possible_visual_impact"
+      ]
+    }
+  },
+  "required": [
+    "stage",
+    "content"
+  ]
+}

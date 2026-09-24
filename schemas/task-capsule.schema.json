@@ -1,0 +1,69 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "task-capsule.schema.json",
+  "title": "TaskCapsule",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "task_id",
+    "parent_task_id",
+    "role",
+    "responsibility",
+    "goal",
+    "inputs",
+    "required_context",
+    "allowed_paths",
+    "forbidden_paths",
+    "existing_patterns",
+    "api_contract_reference",
+    "visual_lock_reference",
+    "constraints",
+    "acceptance_criteria",
+    "owned_tests",
+    "permissions",
+    "worktree",
+    "expected_output"
+  ],
+  "properties": {
+    "task_id": { "$ref": "common.schema.json#/definitions/id" },
+    "parent_task_id": {
+      "anyOf": [
+        { "$ref": "common.schema.json#/definitions/id" },
+        { "type": "null" }
+      ]
+    },
+    "role": { "$ref": "common.schema.json#/definitions/nonEmpty" },
+    "responsibility": { "$ref": "common.schema.json#/definitions/nonEmpty" },
+    "goal": { "$ref": "common.schema.json#/definitions/nonEmpty" },
+    "inputs": { "$ref": "common.schema.json#/definitions/stringArray" },
+    "required_context": {
+      "$ref": "common.schema.json#/definitions/stringArray"
+    },
+    "allowed_paths": { "$ref": "common.schema.json#/definitions/pathArray" },
+    "forbidden_paths": { "$ref": "common.schema.json#/definitions/pathArray" },
+    "existing_patterns": {
+      "$ref": "common.schema.json#/definitions/stringArray"
+    },
+    "api_contract_reference": {
+      "$ref": "common.schema.json#/definitions/nullableArtifactReference"
+    },
+    "visual_lock_reference": {
+      "$ref": "common.schema.json#/definitions/nullableArtifactReference"
+    },
+    "constraints": { "$ref": "common.schema.json#/definitions/stringArray" },
+    "acceptance_criteria": {
+      "$ref": "common.schema.json#/definitions/stringArray"
+    },
+    "owned_tests": { "$ref": "common.schema.json#/definitions/pathArray" },
+    "permissions": {
+      "enum": ["read-only", "workspace-write", "restricted-path-write"]
+    },
+    "worktree": {
+      "anyOf": [
+        { "$ref": "common.schema.json#/definitions/worktree" },
+        { "type": "null" }
+      ]
+    },
+    "expected_output": { "const": "agent-result" }
+  }
+}

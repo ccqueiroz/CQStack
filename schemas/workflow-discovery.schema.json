@@ -1,0 +1,159 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "workflow-discovery.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "stage": {
+      "const": "discovery"
+    },
+    "content": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "scope": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "files_inspected": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "symbols": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "patterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "existing_behavior": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "assertion": {
+                "type": "string",
+                "minLength": 1
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "common.schema.json#/definitions/evidence"
+                },
+                "minItems": 1
+              }
+            },
+            "required": [
+              "id",
+              "assertion",
+              "evidence"
+            ]
+          }
+        },
+        "tests_found": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "contracts_found": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/definitions/evidence"
+          }
+        },
+        "uncertainties": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ambiguity_triage": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "factual",
+                  "policy"
+                ]
+              },
+              "status": {
+                "enum": [
+                  "closed",
+                  "open",
+                  "not_applicable"
+                ],
+                "description": "not_applicable requires scoped evidence and an explanation that the question belongs outside this child's responsibility. Relevant but unresolved questions remain open."
+              },
+              "answer": {
+                "type": "string"
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "common.schema.json#/definitions/evidence"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "status",
+              "answer",
+              "evidence"
+            ]
+          }
+        }
+      },
+      "required": [
+        "scope",
+        "files_inspected",
+        "symbols",
+        "patterns",
+        "existing_behavior",
+        "tests_found",
+        "contracts_found",
+        "dependencies",
+        "evidence",
+        "uncertainties",
+        "ambiguity_triage"
+      ]
+    }
+  },
+  "required": [
+    "stage",
+    "content"
+  ]
+}

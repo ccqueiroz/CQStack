@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "contract-change.schema.json",
+  "title": "ContractChange",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "request_id",
+    "task_id",
+    "reason",
+    "current_contract",
+    "proposed_change",
+    "frontend_impact",
+    "backend_impact"
+  ],
+  "properties": {
+    "request_id": { "$ref": "common.schema.json#/definitions/id" },
+    "task_id": { "$ref": "common.schema.json#/definitions/id" },
+    "reason": { "$ref": "common.schema.json#/definitions/nonEmpty" },
+    "current_contract": {
+      "$ref": "common.schema.json#/definitions/artifactReference"
+    },
+    "proposed_change": { "type": "object", "additionalProperties": true },
+    "frontend_impact": { "type": "string" },
+    "backend_impact": { "type": "string" }
+  }
+}

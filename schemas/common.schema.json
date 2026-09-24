@@ -1,0 +1,83 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "common.schema.json",
+  "definitions": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$"
+    },
+    "nonEmpty": { "type": "string", "minLength": 1 },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?![A-Za-z]:[\\\\/])(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\u0000).+$"
+    },
+    "stringArray": { "type": "array", "items": { "type": "string" } },
+    "pathArray": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/relativePath" },
+      "uniqueItems": true
+    },
+    "artifactReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "content_hash"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "version": { "$ref": "#/definitions/nonEmpty" },
+        "content_hash": { "$ref": "#/definitions/hash" }
+      }
+    },
+    "nullableArtifactReference": {
+      "anyOf": [
+        { "$ref": "#/definitions/artifactReference" },
+        { "type": "null" }
+      ]
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assertion", "source", "observation"],
+      "properties": {
+        "assertion": { "$ref": "#/definitions/nonEmpty" },
+        "source": { "$ref": "#/definitions/nonEmpty" },
+        "observation": { "$ref": "#/definitions/nonEmpty" }
+      }
+    },
+    "worktree": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "task_id",
+        "role",
+        "repository",
+        "path",
+        "base_ref",
+        "base_commit",
+        "contract_version",
+        "created_at"
+      ],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "task_id": { "$ref": "#/definitions/id" },
+        "role": { "$ref": "#/definitions/nonEmpty" },
+        "repository": { "$ref": "#/definitions/nonEmpty" },
+        "path": { "type": "string", "minLength": 1 },
+        "base_ref": { "$ref": "#/definitions/nonEmpty" },
+        "base_commit": {
+          "type": "string",
+          "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$"
+        },
+        "contract_version": {
+          "anyOf": [{ "type": "string" }, { "type": "null" }]
+        },
+        "created_at": { "$ref": "#/definitions/timestamp" }
+      }
+    }
+  }
+}

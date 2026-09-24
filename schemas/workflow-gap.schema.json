@@ -1,0 +1,179 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "workflow-gap.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "stage": {
+      "const": "gap"
+    },
+    "content": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "missing_behaviors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "assertion": {
+                "type": "string"
+              },
+              "truth_claim_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "common.schema.json#/definitions/evidence"
+                },
+                "minItems": 1
+              }
+            },
+            "required": [
+              "assertion",
+              "truth_claim_ids",
+              "evidence"
+            ]
+          }
+        },
+        "missing_integrations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "assertion": {
+                "type": "string"
+              },
+              "truth_claim_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "common.schema.json#/definitions/evidence"
+                },
+                "minItems": 1
+              }
+            },
+            "required": [
+              "assertion",
+              "truth_claim_ids",
+              "evidence"
+            ]
+          }
+        },
+        "missing_contracts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "assertion": {
+                "type": "string"
+              },
+              "truth_claim_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "common.schema.json#/definitions/evidence"
+                },
+                "minItems": 1
+              }
+            },
+            "required": [
+              "assertion",
+              "truth_claim_ids",
+              "evidence"
+            ]
+          }
+        },
+        "affected_surfaces": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "confirmed_non_gaps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "assertion": {
+                "type": "string"
+              },
+              "truth_claim_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "common.schema.json#/definitions/evidence"
+                },
+                "minItems": 1
+              }
+            },
+            "required": [
+              "assertion",
+              "truth_claim_ids",
+              "evidence"
+            ]
+          }
+        },
+        "out_of_scope": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "unknowns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/definitions/evidence"
+          }
+        }
+      },
+      "required": [
+        "missing_behaviors",
+        "missing_integrations",
+        "missing_contracts",
+        "affected_surfaces",
+        "confirmed_non_gaps",
+        "out_of_scope",
+        "unknowns",
+        "evidence"
+      ]
+    }
+  },
+  "required": [
+    "stage",
+    "content"
+  ]
+}

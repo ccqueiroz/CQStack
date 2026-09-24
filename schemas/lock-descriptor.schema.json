@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "lock-descriptor.schema.json",
+  "title": "LockDescriptor",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_id",
+    "task_id",
+    "version",
+    "status",
+    "content_hash",
+    "approved_timestamp",
+    "backend_reviewer",
+    "frontend_reviewer",
+    "source_artifact"
+  ],
+  "properties": {
+    "contract_id": { "$ref": "common.schema.json#/definitions/id" },
+    "task_id": { "$ref": "common.schema.json#/definitions/id" },
+    "version": { "$ref": "common.schema.json#/definitions/nonEmpty" },
+    "status": { "const": "locked" },
+    "content_hash": { "$ref": "common.schema.json#/definitions/hash" },
+    "approved_timestamp": {
+      "$ref": "common.schema.json#/definitions/timestamp"
+    },
+    "backend_reviewer": { "$ref": "common.schema.json#/definitions/nonEmpty" },
+    "frontend_reviewer": { "$ref": "common.schema.json#/definitions/nonEmpty" },
+    "source_artifact": {
+      "$ref": "common.schema.json#/definitions/relativePath"
+    }
+  }
+}
