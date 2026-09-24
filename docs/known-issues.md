@@ -46,6 +46,7 @@ Evidence files live in the operator's local `artifacts/` directory, which is not
   - Aliases: `luna`, `sonnet-5`, `sol`, `astra` (explicit `extreme-architecture` escalation), `opus-5.5` and `fable-5.1` (explicit `extreme-review` escalation).
   - Each has an observation with `provider_invoked: true`, exit code 0, a hash equal to its event, and a creation time after the last code checkpoint.
 - **Fixed smoke without a `file:line` citation.** A Codex smoke cited the README without a line and failed the harness check. The smoke's wire schema now pins a `file:line` pattern, with a regression test, and the repeated smoke passed.
+- **Live Apply proof root reaches DONE.** The root stopped at `LOCAL_VERIFICATION` for lack of budget. It was completed later with one authorized call: the independent apply review (Opus 5.5, read-only tools) approved with 0 findings and no future gates, and the root moved through `ADVERSARIAL_REVIEW → REVIEW_GATE_APPLY → DONE`.
 - **Failure attributed to the wrong contract reviewer.** Each contract reviewer is now validated right after it runs.
 - **Explicit replacement of a contract child read the original result.** Replacement children are now resolved by their current ID.
 
@@ -68,9 +69,6 @@ Evidence files live in the operator's local `artifacts/` directory, which is not
   - Observed: a Gap child escalated to Astra returned `completed` with `evidence: []`. Canonical validation rejected it (fail-closed), and the root stopped at `TRUTH_VERIFIED`. The real invocation still counts as the routing proof for Astra.
   - Cause: the rule exists only in the canonical `allOf`/`if-then`, which Codex rejects.
   - Unblock: express the rule on the Codex wire without `allOf`/`if` (for example, `anyOf` variants for `completed` and `blocked`), with a regression test and fresh roots.
-- **The live Apply proof root stopped at `LOCAL_VERIFICATION`.**
-  - Its independent apply review was not run: the proof criterion did not require it, and the authorized call budget was spent.
-  - Unblock: run `workflow apply-review <root> --execute` with a new cost authorization.
 - **Standalone layout.**
   - The runtime hard-codes `.cartera/harness`, computes the workspace root as two levels up, and `doctor` inspects `cartera-backend`, `cartera-frontend` and `<workspace>/.mcp.json`.
   - Unblock: a dedicated change that makes the workspace root, the harness path, the registered repositories and the MCP configuration path configurable.
