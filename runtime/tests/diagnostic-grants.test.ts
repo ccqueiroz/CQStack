@@ -70,9 +70,9 @@ test("operator CLI explicitly grants an exact diagnostic capsule without executi
 });
 
 test("the persisted Fable diagnostic capsule is eligible in isolated test storage only under its root's persisted route, without issuing a real grant", t => {
-  const f = fixture(t), task = "PHASE2-LIFECYCLE-DIAG-truth-review-lifecycle";
-  const readCapsule = (name: string): TaskCapsule => JSON.parse(readFileSync(join(HARNESS_ROOT, "state/events", name + ".jsonl"), "utf8").split("\n")[0]).payload.capsule;
-  const c = readCapsule(task), root = readCapsule(c.parent_task_id!);
+  const f = fixture(t);
+  // Copied verbatim from the first event of each persisted task; state/ is ignored by Git, so a clean clone has no events.
+  const { capsule: c, root } = JSON.parse(readFileSync(join(HARNESS_ROOT, "runtime/tests/fixtures/phase2-lifecycle-diagnostic-capsules.json"), "utf8")) as { capsule: TaskCapsule; root: TaskCapsule };
   assert.equal(hash(c), "3b06266d8b3ae60d41be1ca2023e0ee5aae8360481ef9067f3b877cd51b95b11");
   // The legacy root predates routing snapshots; its historical route lives in the codex profile.
   const route = f.bus.router.resolve(c.role, "codex");

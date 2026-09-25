@@ -1,7 +1,7 @@
-import { readFileSync, readdirSync, lstatSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, lstatSync } from "node:fs";
 import { join, resolve, relative } from "node:path";
 import type { AgentBus } from "../agent-bus/index.js";
-import { HARNESS_ROOT, hash, scopePath, within, id } from "../storage.js";
+import { WORKSPACE_ROOT, hash, scopePath, within, id } from "../storage.js";
 import { validate } from "../validation/index.js";
 import { checkFileEvidence } from "../validation/evidence.js";
 import type { TaskState, TaskCapsule } from "../contracts.js";
@@ -9,7 +9,7 @@ import type { WorkflowArtifact, WorkflowManifest, WorkflowOutput, Stage } from "
 import { STAGES } from "./contracts.js";
 import { childCapsule, selectedInputs } from "./adapters.js";
 import { checkFlowOutput, checkFlowResultEvidence } from "./producers/flow.js";
-export const WORKSPACE = resolve(HARNESS_ROOT, "../..");
+export const WORKSPACE = WORKSPACE_ROOT;
 export const STATES: Record<Stage, TaskState> = { "task-sense": "TASK_SENSE_COMPLETE", discovery: "DISCOVERY_COMPLETE", flow: "FLOW_COMPLETE", truth: "TRUTH_VERIFIED", gap: "GAP_DEFINED" };
 export function manifest(bus: AgentBus, root: string): WorkflowManifest {
   const value = bus.storage.read<WorkflowManifest>("workflows", id(root), "manifest.json");
@@ -20,7 +20,7 @@ export function manifest(bus: AgentBus, root: string): WorkflowManifest {
   if (value.routing && hash(value.routing) !== hash(bus.routing(root))) throw new Error("WORKFLOW_MANIFEST_MISMATCH");
   return value;
 }
-export function snapshot(paths: string[], forbidden: string[]): Record<string, string> {
+export function snapshot(paths: string[], forbidden: string[], optional: string[] = []): Record<string, string> {
   const result: Record<string, string> = {};
   function walk(path: string) {
     const name = relative(WORKSPACE, path);
@@ -31,7 +31,11 @@ export function snapshot(paths: string[], forbidden: string[]): Record<string, s
     if (stat.isDirectory()) for (const child of readdirSync(path).sort()) walk(join(path, child));
     else if (stat.isFile()) result[name] = hash(readFileSync(path).toString("base64"));
   }
-  paths.forEach(p => walk(scopePath(WORKSPACE, p)));
+  paths.forEach(p => {
+    const path = scopePath(WORKSPACE, p);
+    if (optional.includes(p) && !existsSync(path)) result[relative(WORKSPACE, path)] = "absent";
+    else walk(path);
+  });
   return result;
 }
 export function resolveChild(bus: AgentBus, root: string, base: string): string {

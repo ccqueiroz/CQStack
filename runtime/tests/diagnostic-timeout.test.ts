@@ -1,6 +1,6 @@
 import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -18,6 +18,8 @@ const diagnostic: GrantMode = "orchestrated-read-only-diagnosis";
 const source = ".cartera/harness/README.md";
 
 function fixture(t: TestContext, mode?: GrantMode) {
+  // artifacts/ is ignored by Git, so a clean clone does not have it yet.
+  mkdirSync(join(HARNESS_ROOT, "artifacts"), { recursive: true });
   const directory = mkdtempSync(join(HARNESS_ROOT, "artifacts/timeout-test-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const storage = new Storage(directory);

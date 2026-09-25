@@ -1,7 +1,7 @@
 import type { Permission, ResolvedRole, RoutingSnapshot, TaskCapsule } from "../contracts.js";
 import { readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { Storage, hash, id, HARNESS_ROOT, scopePath, within } from "../storage.js";
+import { join } from "node:path";
+import { Storage, hash, id, HARNESS_ROOT, WORKSPACE_ROOT, harnessPath, scopePath, within } from "../storage.js";
 import { smokeCapsule } from "../providers/smoke.js";
 import { EventStore } from "../events/index.js";
 
@@ -63,8 +63,8 @@ function assertPolicy(storage: Storage, c: TaskCapsule, root: TaskCapsule, route
   } else if (mode === "read-only-harness") {
     if (c.parent_task_id !== root.task_id || root.parent_task_id ||
         !["mechanical-worker", "discovery-tests"].includes(c.role) ||
-        c.allowed_paths.length !== 1 || c.allowed_paths[0] !== ".cartera/harness/README.md" ||
-        c.required_context.some(p => p !== ".cartera/harness/README.md") ||
+        c.allowed_paths.length !== 1 || c.allowed_paths[0] !== harnessPath("README.md") ||
+        c.required_context.some(p => p !== harnessPath("README.md")) ||
         c.owned_tests.length || c.api_contract_reference || c.visual_lock_reference)
       throw new Error("EXECUTION_GRANT_HANDOFF_SCOPE_REQUIRED");
   } else if (mode === "orchestrated-read-only-diagnosis") {
@@ -78,7 +78,7 @@ function assertPolicy(storage: Storage, c: TaskCapsule, root: TaskCapsule, route
         route.role.allowed_capabilities.some(cap => !["read", "return-result"].includes(cap)) ||
         c.owned_tests.length || c.api_contract_reference !== null || c.visual_lock_reference !== null)
       throw new Error("EXECUTION_GRANT_DIAGNOSIS_SCOPE_REQUIRED");
-    const workspace = resolve(HARNESS_ROOT, "../..");
+    const workspace = WORKSPACE_ROOT;
     const forbidden = c.forbidden_paths.map(p => scopePath(workspace, p));
     const allowed = c.allowed_paths.map(p => {
       const path = scopePath(workspace, p);
@@ -100,7 +100,7 @@ function assertPolicy(storage: Storage, c: TaskCapsule, root: TaskCapsule, route
         !isInternalMaintenanceCapsule(c) || c.api_contract_reference !== null ||
         c.visual_lock_reference !== null || !c.allowed_paths.length)
       throw new Error("EXECUTION_GRANT_MAINTENANCE_SCOPE_REQUIRED");
-    const workspace = resolve(HARNESS_ROOT, "../..");
+    const workspace = WORKSPACE_ROOT;
     const forbidden = c.forbidden_paths.map(p => scopePath(workspace, p));
     for (const p of c.allowed_paths) {
       const path = scopePath(workspace, p);

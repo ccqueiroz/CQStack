@@ -1,18 +1,26 @@
 # Usage
 
-All commands run from the harness directory. Because of the current layout limitation, that directory must be `<workspace>/.cartera/harness` (see [limitations-and-roadmap.md](limitations-and-roadmap.md)).
+All commands run from the harness directory.
+
+## Layout
+
+The harness resolves its workspace from `config/runtime.json`:
+
+- **Embedded (default).** Without a `workspace` key, the workspace root is two levels above the harness, as in `<workspace>/.cartera/harness`. Logical paths of harness files carry the `.cartera/harness/` prefix.
+- **Standalone.** Set `"workspace": { "root": "." }` to make the harness directory itself the workspace. Logical paths then have no prefix (`README.md`). Also set `repositories` to the repositories you want the harness to know (or `[]`): the versioned default lists `cartera-backend` and `cartera-frontend`, and `doctor` reports them as failures when they are missing.
+
+`workspace.root` is resolved relative to the harness directory and must contain it. A root below the harness or beside it (for example `"runtime"` or `"../other"`) fails at load with `WORKSPACE_ROOT_MUST_CONTAIN_HARNESS`, before any state is written. The MCP configuration is always read from `<workspace>/.mcp.json`.
 
 ## Install and build
 
 ```sh
-mkdir -p state artifacts      # git-ignored; some tests create temporaries in them
 npm ci --ignore-scripts
 npm run build
 npm test
 npm run doctor                # checks schemas, state access, workspace repositories and MCP config
 ```
 
-`doctor` inspects `<workspace>/cartera-backend`, `<workspace>/cartera-frontend` and `<workspace>/.mcp.json`. In a workspace without them, those checks report failures. The runtime itself still works.
+`doctor` inspects each repository listed in `runtime.json` under the workspace root, and `<workspace>/.mcp.json`. A missing repository or MCP file is reported as a failed check; the runtime itself still works.
 
 ## CLI
 
@@ -83,10 +91,4 @@ See `examples/` for demonstration requests. They reference the original workspac
 
 ## Clean-clone test status
 
-The full suite passes in the development workspace. In a fresh clone placed at `<workspace>/.cartera/harness` with `state/` and `artifacts/` created, about 7 tests still fail, because they depend on local development state that is not versioned:
-
-- historical task events under `state/events/`;
-- the workspace-level `AGENTS.md` and `CLAUDE.md`, which the architecture review includes in its subject;
-- the initialized write fixture under `state/fixtures/` (`npm run cli -- fixture init` creates it).
-
-Making these tests self-contained is part of the standalone-layout work (see [known-issues.md](known-issues.md)).
+The full suite runs from a clean clone in the embedded layout, without `state/`, `artifacts/`, workspace-level `AGENTS.md`/`CLAUDE.md` or sibling repositories: tests create the state they need in temporary directories or disposable harness copies. The standalone layout is covered by targeted tests in `runtime/tests/layout.test.ts`; running the whole suite standalone is deferred (see [known-issues.md](known-issues.md)).

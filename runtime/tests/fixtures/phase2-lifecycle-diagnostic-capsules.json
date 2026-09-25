@@ -1,0 +1,119 @@
+{
+ "capsule": {
+  "task_id": "PHASE2-LIFECYCLE-DIAG-truth-review-lifecycle",
+  "parent_task_id": "PHASE2-LIFECYCLE-DIAG",
+  "role": "truth",
+  "responsibility": "Independently verify, against runtime source and persisted events only, the exact root cause of the proposal-review lifecycle failure on PHASE2-ISOLATED-FINAL-propose-review-v2: (a) the exact check that raised ENGINEERING_REVIEW_PROVENANCE_INVALID on action 45cbbdd7-9c49-4df3-b279-922bff2052e7 and which field mismatch triggered it (result status needs_review vs completed, subject_hash b56571d8... vs proposal content_hash 98538165..., reviewer/task_id fields, capsule_hash, execution_event_id, or other); (b) the exact lookup/recovery path taken by action b3359a7f-2429-4c43-83ec-1c2a4e77b6b8 that re-selected the same child and the exact source of WORKFLOW_RESULT_NOT_RECOVERABLE; (c) how the engineering module keys and selects review children (root, role, action, version, subject) and whether equal roles or older subjects can collide or shadow the current subject; (d) how proposal v1 and v2 identity, versions and subject hashes are derived and persisted; (e) whether the apply-review path shares the same selection/recovery mechanism. Prove the root cause with file:line evidence; do not assume root+role keying is the bug. Report what the evidence does not settle as unverified.",
+  "goal": "Produce a proven, evidence-backed root cause for the v2 review failure in PHASE2-ISOLATED-FINAL that distinguishes: recovery of interrupted persistence on the same child/capsule/subject; explicit retry (new invocation, same subject); replacement (new child and lineage); and a new lifecycle for a new subject. The result is diagnosis only and will gate a separately authorized minimal runtime remediation.",
+  "inputs": [
+   "Historical root PHASE2-ISOLATED-FINAL (read-only): state PROPOSAL_CREATED; engineering proposal = PHASE2-ISOLATED-FINAL-proposal-v2 version 2 content_hash 98538165680a833b2200aef97c91b87214920c6050269c3972f623c6c90aa2c9; proposal_review null; blocked WORKFLOW_RESULT_NOT_RECOVERABLE.",
+   "Root failure sequence: action 71e5b80a-cca4-436e-8994-40907399c28e proposal-review -> WAITING_FOR_USER_DECISION with child_task null (no v1 review child ever created); action 7938eb16-8f3c-441e-aca2-8581fa2739e9 propose revise version 2 completed; action 39ff423d-bb65-43b5-a5fb-faf3ac8d65bf propose revise version 3 -> PROPOSAL_REVISION_REQUIRES_REVIEW_OR_DECISION; action 45cbbdd7-9c49-4df3-b279-922bff2052e7 proposal-review created child PHASE2-ISOLATED-FINAL-propose-review-v2 (workflow.child.created capsule_hash 94cd7e6dcde5f13fbee2584bceb5c47e2d2183f1fe1db2ab55edd33a37f2fc30, engineering.child.selected) then engineering.action.failed ENGINEERING_REVIEW_PROVENANCE_INVALID at 2026-09-13T13:07:43.957Z; action b3359a7f-2429-4c43-83ec-1c2a4e77b6b8 proposal-review emitted engineering.child.selected for the SAME child (no new workflow.child.created) then engineering.action.failed WORKFLOW_RESULT_NOT_RECOVERABLE at 2026-09-13T13:14:50.638Z.",
+   "Proposal v1 child PHASE2-ISOLATED-FINAL-proposal-v1: role opsx-proposer codex/astra gpt-6-astra; capsule_hash 1ab5b7d318cc6d006c51f670d4b3c89ced851e5c684ffb61181b46750fd54016; execution_event_id f155109c-4bc6-4e20-b47e-610f522b6ff9; provider artifact PHASE2-ISOLATED-FINAL-proposal-v1-643b534af100548d3ee912fc3367cb075562ab2e490a06b1cad466cf81c87879.json; result_hash 118d8d6c01391b6f06dd61deeb43f178c24a4970c640320fff2878e8baca6152; agent.completed result_status completed; engineering.artifact.created kind proposal path proposal-v1.json content_hash 6aa5cd050a51530d43f1b7f695838a3822f79814a89e63531d927882a5c247c6.",
+   "Proposal v2 child PHASE2-ISOLATED-FINAL-proposal-v2: role opsx-proposer codex/astra; capsule_hash 66a43e9e984a77fafb17ead6e8c33970831b2ad2ecdc304f62fed19aff99ec28; execution_event_id b9e383e3-ff46-46a2-9a78-776cc9467435; provider artifact PHASE2-ISOLATED-FINAL-proposal-v2-bae4d8e9f99dc05ad0f183984f87015691de955af6ecf0ad46784b6752b51e5e.json; result_hash 0ec0ebf3d4d3726a45142f9ded76c8dfe12c27b8f8a41caf4d465a028344b6f3; agent.completed result_status completed; engineering.artifact.created path proposal-v2.json content_hash 98538165680a833b2200aef97c91b87214920c6050269c3972f623c6c90aa2c9; previous_proposal_hash 6aa5cd050a51530d43f1b7f695838a3822f79814a89e63531d927882a5c247c6.",
+   "Review v2 child PHASE2-ISOLATED-FINAL-propose-review-v2: role opsx-propose-reviewer claude/sonnet; capsule_hash 94cd7e6dcde5f13fbee2584bceb5c47e2d2183f1fe1db2ab55edd33a37f2fc30; capsule input carried subject_hash b56571d87f4237369e7ebd2279e9ed501c20a32b8a2494600a92ea3c099cd495 and input_references including proposal-v2 content_hash 98538165...; execution_event_id 79cf5c45-b878-4f7d-ac10-10822dd6a5d1; provider artifact PHASE2-ISOLATED-FINAL-propose-review-v2-5d40905cf0377902a527ea1239a23dd44eaa7d67bf9bb6c2897411cb491f3c10.json; result_hash 68112274005c6bcb34f2132dfd1698626647b9a39e603032f9368a1ae32c5b02; agent.result.validated then agent.completed with result_status needs_review; persisted AgentResult.status needs_review; review_result.task_id PHASE2-ISOLATED-FINAL, reviewer PHASE2-ISOLATED-FINAL-propose-review-v2, role opsx-propose-reviewer, subject_hash b56571d8..., verdict approved, one warning finding, future_gates []; child task record state TASK_RECEIVED revision 0 updated_at 2026-09-13T13:07:43.852Z (no task.transitioned events on the child).",
+   "Note the provider-artifact filenames above are taken from provider.observed events; the diagnosis must cite where in runtime source these artifacts and AgentResults are written and read back, and report the exact on-disk locations found rather than assuming them."
+  ],
+  "required_context": [
+   ".cartera/harness/runtime/src/workflow/engineering/",
+   ".cartera/harness/runtime/src/workflow/artifacts.ts",
+   ".cartera/harness/runtime/src/workflow/service.ts",
+   ".cartera/harness/state/events/PHASE2-ISOLATED-FINAL.jsonl"
+  ],
+  "allowed_paths": [
+   ".cartera/harness/runtime/src/workflow/engineering/",
+   ".cartera/harness/runtime/src/workflow/artifacts.ts",
+   ".cartera/harness/runtime/src/workflow/service.ts",
+   ".cartera/harness/runtime/src/agent-bus/index.ts",
+   ".cartera/harness/runtime/src/events/index.ts",
+   ".cartera/harness/runtime/src/state/index.ts",
+   ".cartera/harness/runtime/src/contracts.ts",
+   ".cartera/harness/runtime/tests/engineering.test.ts",
+   ".cartera/harness/state/events/PHASE2-ISOLATED-FINAL.jsonl",
+   ".cartera/harness/state/events/PHASE2-ISOLATED-FINAL-proposal-v1.jsonl",
+   ".cartera/harness/state/events/PHASE2-ISOLATED-FINAL-proposal-v2.jsonl",
+   ".cartera/harness/state/events/PHASE2-ISOLATED-FINAL-propose-review-v2.jsonl"
+  ],
+  "forbidden_paths": [
+   "cartera-backend",
+   "cartera-frontend",
+   ".cartera/harness/runtime/src/execution/",
+   ".cartera/harness/state/fixtures",
+   ".cartera/harness/state/worktrees",
+   ".git"
+  ],
+  "existing_patterns": [],
+  "api_contract_reference": null,
+  "visual_lock_reference": null,
+  "constraints": [
+   "CORE_UNDERSTANDING_ROOT_V1",
+   "Read-only. No writes, no worktree, no tests executed, no edits to runtime, state, events, artifacts or hashes. Do not modify PHASE2-ISOLATED-FINAL or its children.",
+   "Read-only commands must not create temp files: no here-documents, here-strings or output redirections; use cat, rg, sed, nl, node -e or python3 -c.",
+   "Every evidence.source MUST be a workspace-relative file path followed by :line (for example .cartera/harness/runtime/src/workflow/engineering/service.ts:120) or an event_id from the persisted PHASE2-ISOLATED-FINAL event log. Never cite a bare path, a command or a directory.",
+   "Do not assume root+role keying is the bug; prove or reject it with evidence. Separate confirmed, rejected, contradicted and unverified claims.",
+   "Do not propose or implement a fix. Do not inspect .cartera/harness/runtime/src/execution/ (grant policy is out of scope). No system, temp or authentication inspection.",
+   "Return the AgentResult in Portuguese with concise structured evidence; the truth stage schema applies (confirmed, rejected, contradicted, unverified, missing_evidence, actual_system_truth)."
+  ],
+  "acceptance_criteria": [
+   "Exact file:line of the check that produced ENGINEERING_REVIEW_PROVENANCE_INVALID and the specific mismatched field(s), proven against the persisted v2 review AgentResult fields listed in inputs.",
+   "Exact file:line of the recovery/lookup path and the throw site of WORKFLOW_RESULT_NOT_RECOVERABLE on the second proposal-review action, including why the same child was re-selected.",
+   "Evidence-backed statement of how review children are keyed/selected and whether equal roles or older subjects can collide; root+role keying proven or rejected, not assumed.",
+   "Evidence-backed comparison of the proposal-review and apply-review selection/recovery mechanisms.",
+   "Exact on-disk locations of the persisted AgentResults and provider artifacts named in inputs, cited from the writer/reader code.",
+   "Unresolved points listed as unverified with what evidence would settle them."
+  ],
+  "owned_tests": [],
+  "permissions": "read-only",
+  "worktree": null,
+  "expected_output": "agent-result"
+ },
+ "root": {
+  "task_id": "PHASE2-LIFECYCLE-DIAG",
+  "parent_task_id": null,
+  "role": "master-orchestrator",
+  "responsibility": "Coordinate a read-only diagnosis of the Phase 2 engineering review lifecycle failure observed in PHASE2-ISOLATED-FINAL (ENGINEERING_REVIEW_PROVENANCE_INVALID followed by WORKFLOW_RESULT_NOT_RECOVERABLE on PHASE2-ISOLATED-FINAL-propose-review-v2). Coordination root only; not a started WorkflowService workflow. Historical root PHASE2-ISOLATED-FINAL and its children stay read-only and unmodified.",
+  "goal": "Prove, with runtime source file:line evidence and persisted historical events, the exact root cause of the v2 proposal-review lifecycle failure in PHASE2-ISOLATED-FINAL, so that a single minimal runtime remediation can later be authorized separately. Diagnosis only; no implementation.",
+  "inputs": [
+   "Historical root PHASE2-ISOLATED-FINAL: state PROPOSAL_CREATED, engineering blocked=WORKFLOW_RESULT_NOT_RECOVERABLE.",
+   "Failures recorded on root: proposal-review action 71e5b80a-cca4-436e-8994-40907399c28e -> WAITING_FOR_USER_DECISION (child_task null); propose action 39ff423d-bb65-43b5-a5fb-faf3ac8d65bf (revise, version 3) -> PROPOSAL_REVISION_REQUIRES_REVIEW_OR_DECISION (child_task null); proposal-review action 45cbbdd7-9c49-4df3-b279-922bff2052e7 -> ENGINEERING_REVIEW_PROVENANCE_INVALID (child PHASE2-ISOLATED-FINAL-propose-review-v2); proposal-review action b3359a7f-2429-4c43-83ec-1c2a4e77b6b8 re-selected the same child and -> WORKFLOW_RESULT_NOT_RECOVERABLE.",
+   "Proposal v1: child PHASE2-ISOLATED-FINAL-proposal-v1, capsule_hash 1ab5b7d318cc6d006c51f670d4b3c89ced851e5c684ffb61181b46750fd54016, result_hash 118d8d6c01391b6f06dd61deeb43f178c24a4970c640320fff2878e8baca6152, engineering artifact proposal-v1.json content_hash 6aa5cd050a51530d43f1b7f695838a3822f79814a89e63531d927882a5c247c6, provider artifact PHASE2-ISOLATED-FINAL-proposal-v1-643b534af100548d3ee912fc3367cb075562ab2e490a06b1cad466cf81c87879.json. No v1 review child was ever created.",
+   "Proposal v2: child PHASE2-ISOLATED-FINAL-proposal-v2, capsule_hash 66a43e9e984a77fafb17ead6e8c33970831b2ad2ecdc304f62fed19aff99ec28, result_hash 0ec0ebf3d4d3726a45142f9ded76c8dfe12c27b8f8a41caf4d465a028344b6f3, engineering artifact proposal-v2.json content_hash 98538165680a833b2200aef91c87214920c6050269c3972f623c6c90aa2c9 (verify exact value from events; recorded as 98538165680a833b2200aef97c91b87214920c6050269c3972f623c6c90aa2c9), previous_proposal_hash 6aa5cd05..., provider artifact PHASE2-ISOLATED-FINAL-proposal-v2-bae4d8e9f99dc05ad0f183984f87015691de955af6ecf0ad46784b6752b51e5e.json.",
+   "Review v2: child PHASE2-ISOLATED-FINAL-propose-review-v2, role opsx-propose-reviewer, provider claude/sonnet, capsule_hash 94cd7e6dcde5f13fbee2584bceb5c47e2d2183f1fe1db2ab55edd33a37f2fc30, execution_event_id 79cf5c45-b878-4f7d-ac10-10822dd6a5d1, result_hash 68112274005c6bcb34f2132dfd1698626647b9a39e603032f9368a1ae32c5b02, provider artifact PHASE2-ISOLATED-FINAL-propose-review-v2-5d40905cf0377902a527ea1239a23dd44eaa7d67bf9bb6c2897411cb491f3c10.json, AgentResult status needs_review, review_result.verdict approved, review_result.subject_hash b56571d87f4237369e7ebd2279e9ed501c20a32b8a2494600a92ea3c099cd495 (equals the subject_hash supplied in the capsule input), child task state still TASK_RECEIVED revision 0 after agent.completed."
+  ],
+  "required_context": [
+   ".cartera/harness/state/events/PHASE2-ISOLATED-FINAL.jsonl"
+  ],
+  "allowed_paths": [
+   ".cartera/harness/runtime/src/workflow/engineering/",
+   ".cartera/harness/runtime/src/workflow/artifacts.ts",
+   ".cartera/harness/runtime/src/workflow/service.ts",
+   ".cartera/harness/runtime/src/agent-bus/index.ts",
+   ".cartera/harness/runtime/src/events/index.ts",
+   ".cartera/harness/runtime/src/state/index.ts",
+   ".cartera/harness/runtime/src/contracts.ts",
+   ".cartera/harness/runtime/tests/engineering.test.ts",
+   ".cartera/harness/state/events/PHASE2-ISOLATED-FINAL.jsonl"
+  ],
+  "forbidden_paths": [
+   "cartera-backend",
+   "cartera-frontend",
+   ".cartera/harness/runtime/src/execution/",
+   ".git"
+  ],
+  "existing_patterns": [],
+  "api_contract_reference": null,
+  "visual_lock_reference": null,
+  "constraints": [
+   "CORE_UNDERSTANDING_ROOT_V1",
+   "Read-only coordination; no application writes, no worktree, no modification of PHASE2-ISOLATED-FINAL or any of its children, events, artifacts or hashes.",
+   "Diagnosis precedes any implementation; no implementation worker is authorized by this root.",
+   "No Phase 3."
+  ],
+  "acceptance_criteria": [
+   "One diagnosis child returns an evidence-backed AgentResult with runtime source file:line evidence proving the root cause of ENGINEERING_REVIEW_PROVENANCE_INVALID and WORKFLOW_RESULT_NOT_RECOVERABLE on the v2 review, without modifying historical state."
+  ],
+  "owned_tests": [],
+  "permissions": "read-only",
+  "worktree": null,
+  "expected_output": "agent-result"
+ }
+}

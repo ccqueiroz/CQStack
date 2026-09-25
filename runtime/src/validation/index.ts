@@ -49,10 +49,7 @@ function findDefaultSchemaDirectory(): string {
     directory = parent;
   }
 
-  candidates.push(
-    resolve(process.cwd(), ".cartera/harness/schemas"),
-    resolve(process.cwd(), "schemas")
-  );
+  candidates.push(resolve(process.cwd(), "schemas"));
 
   const match = candidates.find((candidate) =>
     existsSync(join(candidate, "agent-result.schema.json"))

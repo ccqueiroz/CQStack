@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { cpSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -38,7 +39,20 @@ test("CLI and MCP transports share state and return resolved JSON values", async
   const state = await realpath(
     await mkdtemp(join(tmpdir(), "cartera-transport-"))
   );
-  const harness = process.cwd();
+  // The CLI child resolves the workspace from its own location, so it runs from a disposable
+  // copy whose workspace holds stubs of the example's files instead of the operator's repositories.
+  const workspace = await realpath(
+    await mkdtemp(join(tmpdir(), "cartera-transport-workspace-"))
+  );
+  const harness = join(workspace, ".cartera/harness");
+  const source = process.cwd();
+  cpSync(source, harness, { recursive: true, verbatimSymlinks: true, filter: (path) =>
+    !["state", "artifacts", "scratchpad"].some((ignored) => path === join(source, ignored)) });
+  const example = JSON.parse(await readFile(join(harness, "examples/phase-2-pagination-workflow.json"), "utf8"));
+  for (const path of example.allowed_paths) {
+    await mkdir(dirname(join(workspace, path)), { recursive: true });
+    await writeFile(join(workspace, path), "// transport test stub\n");
+  }
   const cli = join(harness, "dist/cli/main.js");
   const env = { ...process.env, CARTERA_HARNESS_STATE: state };
   const capsuleFile = join(state, "capsule.json");
@@ -127,5 +141,6 @@ test("CLI and MCP transports share state and return resolved JSON values", async
     }
   } finally {
     await rm(state, { recursive: true, force: true });
+    await rm(workspace, { recursive: true, force: true });
   }
 });

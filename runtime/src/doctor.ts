@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { accessSync, constants, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { HARNESS_ROOT, Storage } from "./storage.js";
+import { HARNESS_ROOT, WORKSPACE_ROOT, Storage } from "./storage.js";
 import { Router } from "./router/index.js";
 import { SchemaValidator } from "./validation/index.js";
 import { WorktreeManager } from "./worktrees/index.js";
@@ -9,6 +9,18 @@ export interface DoctorCheck {
   name: string;
   status: "PASS" | "PARTIAL";
   detail: unknown;
+}
+export function doctorTargets(
+  runtime: { repositories: string[] },
+  workspaceRoot: string
+): { repositories: { name: string; path: string }[]; mcp: string } {
+  return {
+    repositories: runtime.repositories.map((name) => ({
+      name,
+      path: resolve(workspaceRoot, name),
+    })),
+    mcp: join(workspaceRoot, ".mcp.json"),
+  };
 }
 export function doctor(): {
   checks: DoctorCheck[];
@@ -71,10 +83,14 @@ export function doctor(): {
     accessSync(state, constants.R_OK | constants.W_OK);
     return { path: state, write_access: true };
   });
-  for (const repository of ["cartera-backend", "cartera-frontend"])
-    check("repository:" + repository, () => {
+  const targets = doctorTargets(
+    JSON.parse(readFileSync(join(HARNESS_ROOT, "config/runtime.json"), "utf8")),
+    WORKSPACE_ROOT
+  );
+  for (const repository of targets.repositories)
+    check("repository:" + repository.name, () => {
       const info = new WorktreeManager(new Storage(state)).inspect(
-        resolve(HARNESS_ROOT, "../..", repository)
+        repository.path
       );
       return {
         repository: info.repository,
@@ -86,7 +102,7 @@ export function doctor(): {
       };
     });
   check("mcp-configuration", () => {
-    const path = resolve(HARNESS_ROOT, "../../.mcp.json");
+    const path = targets.mcp;
     const config = JSON.parse(readFileSync(path, "utf8"));
     accessSync(path, constants.R_OK | constants.W_OK);
     if (!config.mcpServers || typeof config.mcpServers !== "object")

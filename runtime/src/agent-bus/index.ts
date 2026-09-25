@@ -29,6 +29,7 @@ import type {
 } from "../contracts.js";
 import {
   HARNESS_ROOT,
+  WORKSPACE_ROOT,
   Storage,
   hash,
   scopePath,
@@ -66,6 +67,8 @@ const WIRE_STRIPPED_KEYWORDS = ["$id", "$schema", "allOf", "uniqueItems", "patte
 // isolated probes 2026-09-23/24) rejects allOf, if, uniqueItems and any lookaround regex,
 // which the canonical relativePath pattern needs; it accepts $id and $schema, but they
 // carry no constraint, and maxItems, which reaches it through the pins, not this list.
+// Codex also rejects a root-level anyOf (isolated probe 2026-09-24), so status-conditional
+// rules such as completed => evidence >= 1 stay canonical-only for every provider.
 // An unlisted provider keeps the full strip.
 export const PROVIDER_WIRE_KEYWORDS: Readonly<Record<string, ReadonlySet<string>>> = {
   claude: new Set(["pattern", "uniqueItems"]),
@@ -320,7 +323,7 @@ export class AgentBus {
       capsule.permissions !== role.mutation_permission
     )
       throw new Error("ROLE_PERMISSION_DENIED");
-    const cwd = capsule.worktree?.path ?? resolve(HARNESS_ROOT, "../..");
+    const cwd = capsule.worktree?.path ?? WORKSPACE_ROOT;
     for (const p of [
       ...capsule.allowed_paths,
       ...capsule.forbidden_paths,
@@ -386,7 +389,7 @@ export class AgentBus {
     if (plan.role === "master-orchestrator") throw new Error("WORKER_ROLE_REQUIRED");
     const { capsule: c, state } = this.events.get(task);
     const route = this.routeFor(c),
-      cwd = c.worktree?.path ?? resolve(HARNESS_ROOT, "../..");
+      cwd = c.worktree?.path ?? WORKSPACE_ROOT;
     const provider = this.providers[route.provider];
     if (!provider) throw new Error("PROVIDER_UNAVAILABLE: " + route.provider);
     const rootCapsule = c.parent_task_id ? this.events.get(c.parent_task_id).capsule : c;
@@ -915,7 +918,7 @@ export class AgentBus {
   createWorktree(input: import("../worktrees/index.js").CreateWorktreeInput) {
     this.authority();
     this.router.role(input.role);
-    const workspace = resolve(HARNESS_ROOT, "../..");
+    const workspace = WORKSPACE_ROOT;
     if (
       !this.runtime.repositories.some(
         (r) => resolve(workspace, r) === resolve(input.repository)

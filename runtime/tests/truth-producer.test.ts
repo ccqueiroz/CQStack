@@ -1,5 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { join, relative } from "node:path";
+import { HARNESS_ROOT, WORKSPACE_ROOT } from "../src/storage.js";
+import { ENGINEERING_TEST_PREFIX } from "./test-state.js";
 import { childCapsule, evidencePreflight } from "../src/workflow/adapters.js";
 import { checkOutput } from "../src/workflow/artifacts.js";
 import type { WorkflowRequest, WorkflowOutput } from "../src/workflow/contracts.js";
@@ -59,10 +63,17 @@ test("discovery keeps its original preflight wording so validated discovery caps
   assert.doesNotMatch(preflight, /positive verifiable evidence/);
 });
 
-test("truth output validation rejects a directory, a capsule field and a path without line as evidence.source", () => {
-  const capsule = childCapsule(request, "truth", []);
-  checkOutput(truthOutput(`${directory}/pagination.mjs:1`), capsule, []);
-  assert.throws(() => checkOutput(truthOutput(directory), capsule, []), /EVIDENCE_FILE_LINE_REQUIRED/);
+test("truth output validation rejects a directory, a capsule field and a path without line as evidence.source", t => {
+  // The cited file must exist, so it is materialized under the test-temporary prefix instead of the ignored fixture.
+  mkdirSync(join(HARNESS_ROOT, "state"), { recursive: true });
+  const temporary = mkdtempSync(join(HARNESS_ROOT, "state", `${ENGINEERING_TEST_PREFIX}${process.pid}-truth-`));
+  t.after(() => rmSync(temporary, { recursive: true, force: true }));
+  mkdirSync(join(temporary, "src"));
+  writeFileSync(join(temporary, "src/pagination.mjs"), "export const page = 0;\n");
+  const materialized = relative(WORKSPACE_ROOT, join(temporary, "src"));
+  const capsule = childCapsule({ ...request, repository_scope: [relative(WORKSPACE_ROOT, temporary)], allowed_paths: [materialized, testFile] }, "truth", []);
+  checkOutput(truthOutput(`${materialized}/pagination.mjs:1`), capsule, []);
+  assert.throws(() => checkOutput(truthOutput(materialized), capsule, []), /EVIDENCE_FILE_LINE_REQUIRED/);
   assert.throws(() => checkOutput(truthOutput("capsule.artifacts.api_contract"), capsule, []), /EVIDENCE_FILE_LINE_REQUIRED/);
-  assert.throws(() => checkOutput(truthOutput(`${directory}/pagination.mjs`), capsule, []), /EVIDENCE_FILE_LINE_REQUIRED/);
+  assert.throws(() => checkOutput(truthOutput(`${materialized}/pagination.mjs`), capsule, []), /EVIDENCE_FILE_LINE_REQUIRED/);
 });

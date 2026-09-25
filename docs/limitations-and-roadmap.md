@@ -23,14 +23,13 @@
 - Retry, fall back or escalate models automatically.
 - Provide a security boundary against malicious local code (see [security-model.md](security-model.md)).
 - Resume an incomplete root after a runtime change. Such a root stays inspectable, and new work needs a fresh root.
-- Work outside the Cartera workspace layout yet. The runtime expects to live at `<workspace>/.cartera/harness` and inspects `cartera-backend`, `cartera-frontend` and `<workspace>/.mcp.json`.
+- Run the whole test suite in the standalone layout. Standalone runs are supported and covered by targeted tests; the full suite runs in the embedded layout ([known issues](known-issues.md)).
 
 ## Roadmap
 
-- **Repository parameterization.** Make the workspace root, registered repositories and MCP configuration path configurable, so a standalone clone runs without the Cartera layout.
-- **Codex wire rule for honest stops.** Express `completed ⇒ evidence ≥ 1` without `allOf`/`if` (for example, with `anyOf` variants), so Codex cannot return a completed result with no evidence ([known issues](known-issues.md)).
+- **Status-conditional wire rules.** Enforce `completed ⇒ evidence ≥ 1` on the provider wire once a provider accepts conditional schemas or `AgentResult` is reshaped; a root-level `anyOf` is rejected by Codex ([known issues](known-issues.md)).
 - **Smoke per model class.** Prove every class through a fixed smoke instead of full roots.
 - **Pattern projection for Codex.** Send lookaround-free patterns as format hints.
 - **Claude tool-call observability.** Record Claude tool calls in observations, as Codex `command_execution` items already are.
 - **Retention ceiling for wire schemas.** Bound the growth of `state/provider-agent-result-*.schema.json`.
-- **Self-contained test fixtures.** Tests that need a workspace layout or state directories should create them in temporary directories.
+- **Full standalone suite.** Represent the harness root as a repository when the logical prefix is empty, so every test also runs standalone.

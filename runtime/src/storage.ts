@@ -26,6 +26,25 @@ function findRoot(): string {
   throw new Error("HARNESS_ROOT_NOT_FOUND");
 }
 export const HARNESS_ROOT = findRoot();
+export interface Layout { workspaceRoot: string; harnessPrefix: string }
+export function resolveLayout(harnessRoot: string, runtime: { workspace?: unknown }): Layout {
+  const workspace = runtime.workspace;
+  if (workspace !== undefined && (!workspace || typeof workspace !== "object" || Array.isArray(workspace)))
+    throw new Error("INVALID_RUNTIME_CONFIG");
+  const root = (workspace as { root?: unknown } | undefined)?.root;
+  if (root !== undefined && (typeof root !== "string" || root === "")) throw new Error("INVALID_RUNTIME_CONFIG");
+  const workspaceRoot = resolve(harnessRoot, (root as string | undefined) ?? "../..");
+  // Scope checks resolve every logical path against the workspace, so a harness outside it could never be addressed.
+  const harnessPrefix = relative(workspaceRoot, harnessRoot);
+  if (isAbsolute(harnessPrefix) || harnessPrefix.split(sep)[0] === "..") throw new Error("WORKSPACE_ROOT_MUST_CONTAIN_HARNESS");
+  return { workspaceRoot, harnessPrefix: harnessPrefix.split(sep).join("/") };
+}
+const LAYOUT = resolveLayout(HARNESS_ROOT, JSON.parse(readFileSync(join(HARNESS_ROOT, "config/runtime.json"), "utf8")));
+export const WORKSPACE_ROOT = LAYOUT.workspaceRoot;
+export const HARNESS_PREFIX = LAYOUT.harnessPrefix;
+export function harnessPath(path: string): string {
+  return HARNESS_PREFIX ? HARNESS_PREFIX + "/" + path : path;
+}
 export function id(value: string): string {
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/.test(value))
     throw new Error("INVALID_ID");

@@ -4,7 +4,7 @@
 
 CQStack is not a prompt framework. It is a core that controls **responsibility, scope, state, evidence, review and permission** for every agent it runs. Models do the work; the harness decides what they are allowed to do and checks what they claim.
 
-> **Known limitation.** CQStack was built as a general runtime, but it still assumes the workspace layout it was developed in: it expects to live at `<workspace>/.cartera/harness` and inspects `cartera-backend`, `cartera-frontend` and `<workspace>/.mcp.json`. Standalone use is on the roadmap (see [Maturity](#what-has-been-built-so-far) and [Roadmap](#roadmap)).
+> **Layout.** By default CQStack lives at `<workspace>/.cartera/harness`, the layout it was developed in. Setting `workspace.root` to `.` in `config/runtime.json` makes a clone standalone ([usage](docs/usage.md#layout)). The full test suite runs in the embedded layout; standalone is covered by targeted tests (see [Maturity](#what-has-been-built-so-far) and [Roadmap](#roadmap)).
 
 ## Motivation
 
@@ -128,9 +128,9 @@ These are the architectural decisions, independent of chronology:
 | Visual pipeline and human visual approval | Deferred |
 | Integration, browser E2E and UX Guardian | Deferred |
 | Writes to real product repositories | Not enabled |
-| Parameterization outside the original workspace layout | Pending |
+| Standalone layout (`workspace.root`) | Delivered with targeted tests; full suite in standalone deferred |
 
-CQStack is **not** ready for arbitrary repositories while the last row stands.
+CQStack is **not** ready for arbitrary product repositories while writes to them stay disabled.
 
 ## Problems solved
 
@@ -161,11 +161,10 @@ Details: [docs/security-model.md](docs/security-model.md).
 
 Requirements: Node.js ≥ 20, Git. Docker is needed only for owned-test verification.
 
-> **Read this before installing.** CQStack is currently a harness **extracted from the workspace where it was built**, not yet a drop-in tool for any workspace.
+> **Read this before installing.**
 >
-> - **A plain `git clone` into any folder does not work yet.** The runtime expects to live at `<workspace>/.cartera/harness`, and most tests fail elsewhere. The commands below reproduce that layout.
-> - **Even in that layout, about 7 tests fail in a fresh clone.** They depend on local development state that is not versioned: historical task events, workspace-level `AGENTS.md`/`CLAUDE.md`, and an initialized fixture. At the 2026-09-24 baseline, a fresh clone passed 331 of 360 tests before creating `state/` and `artifacts/`. The full suite passes only in the original workspace.
-> - **Parameterization is the milestone that changes this.** Once the workspace root, harness path, registered repositories and MCP configuration are configurable, CQStack becomes a reusable engineering product. It is item 1 of the [roadmap](#roadmap).
+> - **Embedded layout (default).** Clone into `<workspace>/.cartera/harness`. A fresh clone passes the full suite there without `state/`, `artifacts/`, workspace-level `AGENTS.md`/`CLAUDE.md` or sibling repositories.
+> - **Standalone layout.** Clone anywhere and set `"workspace": { "root": "." }` and your own `repositories` in `config/runtime.json` ([usage](docs/usage.md#layout)). Targeted tests cover layout resolution, the README smoke and its grant, diagnosis boundaries and doctor targets there; other standalone paths are not yet verified, and running the whole suite standalone is deferred ([known issues](docs/known-issues.md)).
 
 **Run the runtime tests.** Clone the repository into a `.cartera/harness` directory of a workspace:
 
@@ -173,7 +172,6 @@ Requirements: Node.js ≥ 20, Git. Docker is needed only for owned-test verifica
 mkdir -p my-workspace/.cartera
 git clone https://github.com/ccqueiroz/CQStack.git my-workspace/.cartera/harness
 cd my-workspace/.cartera/harness
-mkdir -p state artifacts
 npm ci --ignore-scripts
 npm run build
 npm test
@@ -258,11 +256,8 @@ CQStack/
 
 ## Roadmap
 
-1. **Milestone: standalone CQStack.**
-   - Parameterize the workspace root, the harness path, the registered repositories and the MCP configuration.
-   - Make every test self-contained, so that `git clone && npm ci && npm test` passes in any folder.
-   - This turns CQStack from a harness extracted from its original workspace into an engineering product any workspace can use.
-2. Solve the Codex wire-schema limitation for "completed requires evidence".
+1. **Full standalone suite.** Represent the harness root as a repository when the logical prefix is empty, so that every test also runs with `workspace.root` set to `.`.
+2. Enforce "completed requires evidence" on the provider wire once a provider accepts conditional schemas or `AgentResult` is reshaped (a root-level `anyOf` is rejected by Codex).
 3. Consolidate live proof per model class.
 4. Front/back API contracts with lock and invalidation propagation as an active workflow.
 5. Visual pipeline, Storybook, E2E and UX Guardian.
