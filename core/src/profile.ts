@@ -1,3 +1,4 @@
+import { Ajv } from "ajv";
 import { readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 
@@ -34,6 +35,59 @@ export class ProfileError extends Error {
   }
 }
 
+const objectSchema = (properties: Record<string, unknown>, required: string[]): Record<string, unknown> => ({
+  type: "object",
+  properties,
+  required,
+  additionalProperties: false,
+});
+const ID_SCHEMA = { type: "string", pattern: "^[a-z0-9][a-z0-9_-]{0,63}$" };
+const LANGUAGE_TAG_SCHEMA = { type: "string", pattern: "^[a-z]{2,3}(-[A-Za-z0-9]{1,8})*$" };
+const PATH_SCHEMA = { type: "string", minLength: 1 };
+
+const PROFILE_SCHEMA = objectSchema(
+  {
+    project_id: ID_SCHEMA,
+    language: objectSchema(
+      {
+        default: LANGUAGE_TAG_SCHEMA,
+        by_artifact: objectSchema(Object.fromEntries(ARTIFACT_TYPES.map((type) => [type, LANGUAGE_TAG_SCHEMA])), []),
+      },
+      ["default", "by_artifact"],
+    ),
+    commit_identity: objectSchema(
+      {
+        name: { type: "string", pattern: "^[^\\s<>](?:[^<>\\r\\n]*[^\\s<>])?$" },
+        email: { type: "string", pattern: "^[^\\s@<>]+@[^\\s@<>]+\\.[^\\s@<>]+$" },
+      },
+      ["name", "email"],
+    ),
+    providers_required: {
+      type: "array",
+      minItems: 1,
+      uniqueItems: true,
+      items: { type: "string", pattern: "^[a-z][a-z0-9-]{0,31}$" },
+    },
+    repositories: { type: "array", minItems: 1, items: objectSchema({ id: ID_SCHEMA, path: PATH_SCHEMA }, ["id", "path"]) },
+    knowledge_store: objectSchema(
+      // a leading "-" would turn the remote into a `git clone` option
+      { path: PATH_SCHEMA, remote: { type: "string", pattern: "^[^\\s-]\\S*$" }, deliveries_dir: PATH_SCHEMA },
+      ["deliveries_dir"],
+    ),
+    state_dir: { type: "string", minLength: 1 },
+  },
+  ["project_id", "language", "commit_identity", "providers_required", "repositories", "knowledge_store"],
+);
+
+const validateProfile = new Ajv({ allErrors: true, strict: true }).compile(PROFILE_SCHEMA);
+
+function schemaViolation(file: string, violations: string[]): ProfileError {
+  return new ProfileError(
+    "PROFILE_SCHEMA_VIOLATION",
+    `Profile does not match the schema: ${file}: ${violations.join("; ")}`,
+  );
+}
+
 export function loadProfile(projectRoot: string | undefined): ProjectProfile {
   if (typeof projectRoot !== "string" || projectRoot.trim() === "")
     throw new ProfileError(
@@ -61,5 +115,13 @@ export function loadProfile(projectRoot: string | undefined): ProjectProfile {
   } catch (error) {
     throw new ProfileError("PROFILE_INVALID_JSON", `Profile is not valid JSON: ${file}: ${(error as Error).message}`);
   }
+  if (!validateProfile(profile))
+    throw schemaViolation(
+      file,
+      (validateProfile.errors ?? []).map((error) => {
+        const field = error.params.additionalProperty;
+        return `${error.instancePath || "/"} ${error.message}${field === undefined ? "" : ` (${field})`}`;
+      }),
+    );
   return profile as ProjectProfile;
 }

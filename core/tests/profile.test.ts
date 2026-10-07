@@ -166,3 +166,146 @@ test("[PROV-01] providers_required is returned unchanged and in order, with unkn
     assert.deepEqual(loadProfile(projectRootWithProfile(profile)), profile);
   }
 });
+
+function editProfile(pointer: string, edit: (parent: any, key: string) => void): unknown {
+  const profile: any = structuredClone(VALID_PROFILE);
+  const keys = pointer.split("/").slice(1);
+  const key = keys.pop() as string;
+  edit(keys.reduce((parent, next) => parent[next], profile), key);
+  return profile;
+}
+
+function profileWith(pointer: string, value: unknown): unknown {
+  return editProfile(pointer, (parent, key) => {
+    parent[key] = value;
+  });
+}
+
+function profileWithout(pointer: string): unknown {
+  return editProfile(pointer, (parent, key) => {
+    delete parent[key];
+  });
+}
+
+function schemaViolations(profile: unknown): string[] {
+  const projectRoot = projectRootWithProfile(profile);
+  const message = expectProfileError(() => loadProfile(projectRoot), "PROFILE_SCHEMA_VIOLATION");
+  const prefix = `Profile does not match the schema: ${profileFile(projectRoot)}: `;
+  assert.ok(message.startsWith(prefix), message);
+  return message.slice(prefix.length).split("; ");
+}
+
+function assertViolation(profile: unknown, pointer: string, field?: string): void {
+  const violations = schemaViolations(profile);
+  const found = violations.some(
+    (violation) => violation.startsWith(`${pointer} `) && (field === undefined || violation.endsWith(` (${field})`)),
+  );
+  assert.ok(found, `expected a violation at ${pointer}${field === undefined ? "" : ` (${field})`}: ${violations.join("; ")}`);
+}
+
+test("[PROF-09] a top-level value that is not an object is rejected", () => {
+  for (const value of [null, [], "text", 42]) assertViolation(value, "/");
+});
+
+test("[PROF-09] a missing required field is rejected", () => {
+  const cases: Array<[removed: string, parentPointer: string]> = [
+    ["/project_id", "/"],
+    ["/language", "/"],
+    ["/commit_identity", "/"],
+    ["/providers_required", "/"],
+    ["/repositories", "/"],
+    ["/knowledge_store", "/"],
+    ["/language/by_artifact", "/language"],
+    ["/commit_identity/name", "/commit_identity"],
+    ["/commit_identity/email", "/commit_identity"],
+    ["/repositories/0/id", "/repositories/0"],
+    ["/repositories/0/path", "/repositories/0"],
+    ["/knowledge_store/deliveries_dir", "/knowledge_store"],
+  ];
+  for (const [removed, parentPointer] of cases) assertViolation(profileWithout(removed), parentPointer);
+});
+
+test("[PROF-09] a value of the wrong type is rejected", () => {
+  const cases: Array<[pointer: string, value: unknown]> = [
+    ["/project_id", 1],
+    ["/language", "en"],
+    ["/language/by_artifact", []],
+    ["/commit_identity", "Ada"],
+    ["/providers_required", "alpha-llm"],
+    ["/repositories", {}],
+    ["/repositories/0", "app"],
+    ["/knowledge_store/deliveries_dir", 1],
+    ["/state_dir", 3],
+  ];
+  for (const [pointer, value] of cases) assertViolation(profileWith(pointer, value), pointer);
+});
+
+test("[PROF-09] a value outside the fixed formats is rejected", () => {
+  const cases: Array<[pointer: string, values: unknown[]]> = [
+    ["/project_id", ["Acme-toy", "-acme", ".acme", "a/b", "", "a".repeat(65)]],
+    ["/language/default", ["english", "EN", ""]],
+    ["/language/by_artifact/commit", ["English"]],
+    ["/commit_identity/name", ["<Ada>", " Ada", "Ada ", "Ada\nExample", ""]],
+    ["/commit_identity/email", ["ada", "ada@example", "ada example@example.com", "<ada@example.com>"]],
+    ["/repositories", [[]]],
+    ["/repositories/0/id", ["App", "a:b"]],
+    ["/repositories/0/path", [""]],
+    ["/knowledge_store/path", [""]],
+    ["/knowledge_store/deliveries_dir", [""]],
+    ["/knowledge_store/remote", ["-oProxyCommand=x", "has space", ""]],
+    ["/state_dir", [""]],
+  ];
+  for (const [pointer, values] of cases) {
+    for (const value of values) assertViolation(profileWith(pointer, value), pointer);
+  }
+});
+
+test("[PROF-10] an unknown field at any level is rejected and named", () => {
+  const cases: Array<[parentPointer: string, field: string]> = [
+    ["/", "workspace"],
+    ["/language", "extra"],
+    ["/commit_identity", "signing_key"],
+    ["/repositories/0", "default_branch"],
+    ["/knowledge_store", "schema_ref"],
+  ];
+  for (const [parentPointer, field] of cases) {
+    const pointer = parentPointer === "/" ? `/${field}` : `${parentPointer}/${field}`;
+    assertViolation(profileWith(pointer, "x"), parentPointer, field);
+  }
+});
+
+test("[LANG-01] a by_artifact key outside the closed list is rejected, case-sensitive", () => {
+  for (const key of ["Commit", "pull-request", "docs"]) {
+    assertViolation(profileWith(`/language/by_artifact/${key}`, "en"), "/language/by_artifact", key);
+  }
+});
+
+test("[LANG-03] a profile without language.default is rejected", () => {
+  assertViolation(profileWithout("/language/default"), "/language");
+});
+
+test("[PROV-02] a profile without providers_required is rejected, with no default provider", () => {
+  assertViolation(profileWithout("/providers_required"), "/");
+});
+
+test("[PROV-03] an empty, repeated or malformed providers_required is rejected", () => {
+  assertViolation(profileWith("/providers_required", []), "/providers_required");
+  assertViolation(profileWith("/providers_required", ["alpha-llm", "alpha-llm"]), "/providers_required");
+  for (const id of ["Alpha", "-x", "a".repeat(33)]) {
+    assertViolation(profileWith("/providers_required", [id]), "/providers_required/0");
+  }
+});
+
+test("[STORE-01] a knowledge_store that is not a single object is rejected", () => {
+  for (const value of [[{ deliveries_dir: "deliveries" }], "store"]) {
+    assertViolation(profileWith("/knowledge_store", value), "/knowledge_store");
+  }
+});
+
+test("[STORE-02] a knowledge_store inside a repository entry is rejected", () => {
+  assertViolation(
+    profileWith("/repositories/0/knowledge_store", { deliveries_dir: "deliveries" }),
+    "/repositories/0",
+    "knowledge_store",
+  );
+});
