@@ -79,7 +79,40 @@ const PROFILE_SCHEMA = objectSchema(
   ["project_id", "language", "commit_identity", "providers_required", "repositories", "knowledge_store"],
 );
 
-const validateProfile = new Ajv({ allErrors: true, strict: true }).compile(PROFILE_SCHEMA);
+const validateProfile = new Ajv({ allErrors: true, strict: true }).compile<ProjectProfile>(PROFILE_SCHEMA);
+
+const RELATIVE_PATH_RULE =
+  'must be a relative path: no leading "/", "-" or drive letter, no "\\", no NUL and no ".." segment';
+
+// "C:x" is relative to the drive's current directory on Windows, so any drive letter is refused.
+function isRelativePath(path: string): boolean {
+  return !(
+    path.startsWith("/") ||
+    path.startsWith("-") ||
+    /^[A-Za-z]:/.test(path) ||
+    path.includes("\\") ||
+    path.includes("\0") ||
+    path.split("/").includes("..")
+  );
+}
+
+function codeViolations(profile: ProjectProfile): string[] {
+  const violations: string[] = [];
+  const seenRepositoryIds = new Set<string>();
+  profile.repositories.forEach((repository, index) => {
+    if (seenRepositoryIds.has(repository.id)) violations.push(`/repositories/${index}/id must be unique`);
+    seenRepositoryIds.add(repository.id);
+  });
+  const pathFields: Array<[pointer: string, path: string | undefined]> = [
+    ...profile.repositories.map((repository, index): [string, string] => [`/repositories/${index}/path`, repository.path]),
+    ["/knowledge_store/path", profile.knowledge_store.path],
+    ["/knowledge_store/deliveries_dir", profile.knowledge_store.deliveries_dir],
+  ];
+  for (const [pointer, path] of pathFields) {
+    if (path !== undefined && !isRelativePath(path)) violations.push(`${pointer} ${RELATIVE_PATH_RULE}`);
+  }
+  return violations;
+}
 
 function schemaViolation(file: string, violations: string[]): ProfileError {
   return new ProfileError(
@@ -123,5 +156,7 @@ export function loadProfile(projectRoot: string | undefined): ProjectProfile {
         return `${error.instancePath || "/"} ${error.message}${field === undefined ? "" : ` (${field})`}`;
       }),
     );
-  return profile as ProjectProfile;
+  const violations = codeViolations(profile);
+  if (violations.length > 0) throw schemaViolation(file, violations);
+  return profile;
 }

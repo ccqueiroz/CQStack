@@ -309,3 +309,39 @@ test("[STORE-02] a knowledge_store inside a repository entry is rejected", () =>
     "knowledge_store",
   );
 });
+
+const RELATIVE_PATH_RULE =
+  'must be a relative path: no leading "/", "-" or drive letter, no "\\", no NUL and no ".." segment';
+
+function assertExactViolation(profile: unknown, violation: string): void {
+  const projectRoot = projectRootWithProfile(profile);
+  assert.equal(
+    expectProfileError(() => loadProfile(projectRoot), "PROFILE_SCHEMA_VIOLATION"),
+    `Profile does not match the schema: ${profileFile(projectRoot)}: ${violation}`,
+  );
+}
+
+test("[REPO-01] repeated repository ids are rejected", () => {
+  assertExactViolation(
+    profileWith("/repositories", [
+      { id: "app", path: "." },
+      { id: "app", path: "web" },
+    ]),
+    "/repositories/1/id must be unique",
+  );
+});
+
+test("[PROF-09] a path field that is not a relative path is rejected", () => {
+  const cases: Array<[pointer: string, values: string[]]> = [
+    ["/repositories/0/path", ["/abs", "-x", "a\\b", "a/../b", "..", "a\u0000b", "C:/outside", "C:outside"]],
+    ["/knowledge_store/path", ["..", "C:/outside", "C:outside"]],
+    ["/knowledge_store/deliveries_dir", ["../x", "C:/outside", "C:outside"]],
+  ];
+  for (const [pointer, values] of cases) {
+    for (const value of values) assertExactViolation(profileWith(pointer, value), `${pointer} ${RELATIVE_PATH_RULE}`);
+    for (const value of [".", "repos/app"]) {
+      const profile = profileWith(pointer, value);
+      assert.deepEqual(loadProfile(projectRootWithProfile(profile)), profile);
+    }
+  }
+});
