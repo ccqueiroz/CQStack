@@ -274,6 +274,17 @@ test("[PROF-10] an unknown field at any level is rejected and named", () => {
   }
 });
 
+test("[PROF-09] [PROF-10] every schema violation is reported, not only the first", () => {
+  const profile: any = profileWith("/project_id", "Acme-toy");
+  profile.language.extra = "x";
+  const violations = schemaViolations(profile);
+  assert.ok(violations.some((violation) => violation.startsWith("/project_id ")), violations.join("; "));
+  assert.ok(
+    violations.some((violation) => violation.startsWith("/language ") && violation.endsWith(" (extra)")),
+    violations.join("; "),
+  );
+});
+
 test("[LANG-01] a by_artifact key outside the closed list is rejected, case-sensitive", () => {
   for (const key of ["Commit", "pull-request", "docs"]) {
     assertViolation(profileWith(`/language/by_artifact/${key}`, "en"), "/language/by_artifact", key);
