@@ -166,12 +166,11 @@ Requirements: Node.js ≥ 20, Git. Docker is needed only for owned-test verifica
 > - **Embedded layout (default).** Clone into `<workspace>/.cartera/harness`. A fresh clone passes the full suite there without `state/`, `artifacts/`, workspace-level `AGENTS.md`/`CLAUDE.md` or sibling repositories.
 > - **Standalone layout.** Clone anywhere and set `"workspace": { "root": "." }` and your own `repositories` in `config/runtime.json` ([usage](docs/usage.md#layout)). Targeted tests cover layout resolution, the README smoke and its grant, diagnosis boundaries and doctor targets there; other standalone paths are not yet verified, and running the whole suite standalone is deferred ([known issues](docs/known-issues.md)).
 
-**Run the runtime tests.** Clone the repository into a `.cartera/harness` directory of a workspace:
+**Run the tests.** `npm test` compiles `core/` and runs only the tests in `core/`. `npm run build` compiles the CLI and the MCP server used below. Clone the repository into any directory:
 
 ```sh
-mkdir -p my-workspace/.cartera
-git clone https://github.com/ccqueiroz/CQStack.git my-workspace/.cartera/harness
-cd my-workspace/.cartera/harness
+git clone https://github.com/ccqueiroz/CQStack.git cqstack
+cd cqstack
 npm ci --ignore-scripts
 npm run build
 npm test
@@ -218,6 +217,8 @@ npx tsc --noEmit -p tsconfig.json
 npm test
 zsh scripts/final-gate.sh <evidence-dir>
 ```
+
+`npm test` runs only the tests in `core/`; the `runtime/` suite and `scripts/final-gate.sh` describe the previous runtime and are not the gate.
 
 - **`scripts/final-gate.sh`** is the single reproducible gate. It records:
   - source hash before and after;

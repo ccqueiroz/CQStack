@@ -25,3 +25,13 @@ test("[NAME-01] package.json and the root package in package-lock.json are named
   assert.equal(packageLock.name, "cqstack");
   assert.equal(packageLock.packages[""].name, "cqstack");
 });
+
+test("[DOC-01] the README says npm test compiles core/ and runs only its tests", () => {
+  const readme = readFileSync(join(REPOSITORY_ROOT, "README.md"), "utf8");
+  assert.ok(readme.includes("`npm test` compiles `core/` and runs only the tests in `core/`."));
+  assert.ok(
+    readme.includes(
+      "`npm test` runs only the tests in `core/`; the `runtime/` suite and `scripts/final-gate.sh` describe the previous runtime and are not the gate.",
+    ),
+  );
+});
