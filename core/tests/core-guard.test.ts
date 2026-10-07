@@ -20,6 +20,7 @@ function listRepositoryFiles(root: string): string[] {
   const output = execFileSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], {
     cwd: root,
     encoding: "utf8",
+    stdio: "pipe",
   });
   return [...new Set(output.split("\0").filter((file) => file !== ""))];
 }
