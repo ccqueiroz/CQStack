@@ -147,6 +147,7 @@ test("[GUARD-01] a fictitious term is found in content and in file paths, in any
     "d.txt": "zor blax",
     "zorblax-notes.md": "clean\nzorblax again",
     ["\u0130".repeat(7) + "zorblax.ts"]: "clean",
+    "xzorblax.md": "clean",
   };
   const violations = findViolations(directoryWithFiles(files), Object.keys(files), FICTITIOUS_TERMS, []);
   assert.deepEqual(violations, [
@@ -156,6 +157,7 @@ test("[GUARD-01] a fictitious term is found in content and in file paths, in any
     "*******-notes.md:0: forbidden term #0",
     "*******-notes.md:2: forbidden term #0",
     "\u0130".repeat(7) + "*******.ts:0: forbidden term #0",
+    "x*******.md:0: forbidden term #0",
   ]);
   for (const violation of violations) assert.doesNotMatch(violation, /zorblax/i);
 });
@@ -170,6 +172,10 @@ test("[GUARD-03] an empty or malformed term list throws GUARD_TERMS_INVALID", ()
     [[65, validHash]],
     [[7.5, validHash]],
     [[7, validHash.toUpperCase()]],
+    [[7, validHash], [7, "abc"]],
+    [[7, "x" + validHash]],
+    [[7, validHash + "x"]],
+    [[7, "g" + validHash.slice(1)]],
   ];
   for (const terms of malformedLists) {
     assert.throws(() => findViolations(directory, [], terms, []), { message: "GUARD_TERMS_INVALID" });

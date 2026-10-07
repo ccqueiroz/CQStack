@@ -326,7 +326,7 @@ test("[PROV-02] a profile without providers_required is rejected, with no defaul
 test("[PROV-03] an empty, repeated or malformed providers_required is rejected", () => {
   assertViolation(profileWith("/providers_required", []), "/providers_required");
   assertViolation(profileWith("/providers_required", ["alpha-llm", "alpha-llm"]), "/providers_required");
-  for (const id of ["Alpha", "-x", "a".repeat(33)]) {
+  for (const id of ["Alpha", "-x", "a".repeat(33), "aB", "a_b", "a b", "a.b"]) {
     assertViolation(profileWith("/providers_required", [id]), "/providers_required/0");
   }
 });
