@@ -1,5 +1,5 @@
 {
-  "name": "@cartera/harness",
+  "name": "cqstack",
   "version": "0.1.0",
   "private": true,
   "type": "module",

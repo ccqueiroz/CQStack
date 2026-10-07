@@ -18,3 +18,10 @@ test("[GATE-01] npm test compiles only core/ and runs only the compiled core tes
   assert.equal(coreTsconfig.compilerOptions.outDir, "../dist/core");
   assert.deepEqual(coreTsconfig.include, ["src/**/*.ts", "tests/**/*.ts"]);
 });
+
+test("[NAME-01] package.json and the root package in package-lock.json are named cqstack", () => {
+  const packageLock = readJson("package-lock.json");
+  assert.equal(readJson("package.json").name, "cqstack");
+  assert.equal(packageLock.name, "cqstack");
+  assert.equal(packageLock.packages[""].name, "cqstack");
+});
