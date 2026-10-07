@@ -38,10 +38,10 @@ function findViolations(
 
   const termMatches = (line: string) => {
     const matches: Array<{ termIndex: number; start: number; length: number }> = [];
-    for (const run of line.toLowerCase().matchAll(/[a-z0-9]+/g)) {
+    for (const run of line.matchAll(/[a-z0-9]+/gi)) {
       terms.forEach(([length, sha256], termIndex) => {
         for (let offset = 0; offset + length <= run[0].length; offset++) {
-          const window = run[0].slice(offset, offset + length);
+          const window = run[0].slice(offset, offset + length).toLowerCase();
           if (createHash("sha256").update(window).digest("hex") === sha256) {
             matches.push({ termIndex, start: run.index + offset, length });
           }
@@ -146,6 +146,7 @@ test("[GUARD-01] a fictitious term is found in content and in file paths, in any
     "c.txt": "prefixzorblaxsuffix",
     "d.txt": "zor blax",
     "zorblax-notes.md": "clean\nzorblax again",
+    ["\u0130".repeat(7) + "zorblax.ts"]: "clean",
   };
   const violations = findViolations(directoryWithFiles(files), Object.keys(files), FICTITIOUS_TERMS, []);
   assert.deepEqual(violations, [
@@ -154,6 +155,7 @@ test("[GUARD-01] a fictitious term is found in content and in file paths, in any
     "c.txt:1: forbidden term #0",
     "*******-notes.md:0: forbidden term #0",
     "*******-notes.md:2: forbidden term #0",
+    "\u0130".repeat(7) + "*******.ts:0: forbidden term #0",
   ]);
   for (const violation of violations) assert.doesNotMatch(violation, /zorblax/i);
 });
