@@ -11,7 +11,7 @@ const REPOSITORY_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const FORBIDDEN_TERMS: ReadonlyArray<readonly [length: number, sha256: string]> =
   [[7, "c5fa8aba36db1004d4af8e7131d2fcc7cdcdc5db1c90a9e10364b6421232e701"]]; // ponytail: only the known old name; a new term is a new pair
 // The slashes are escaped, so this source line never matches itself.
-const USER_HOME_PATH = /(?:\/(?:Users|home)\/|[A-Za-z]:\\{1,2}Users\\{1,2})[^\s\/\\"'`]+[\/\\]/;
+const USER_HOME_PATH = /(?:\/(?:Users|home)\/|[A-Za-z]:\\{1,2}Users\\{1,2})[^\s\/\\"'`]+/;
 const LEGACY_PATHS = ["README.md", "config", "docs", "examples", "governance", "mcp", "runtime", "scripts"];
 const BASE_COMMIT = "f291a38d40e80149326a72cb8a8ddea3de9146a4";
 const FICTITIOUS_TERMS = [[7, createHash("sha256").update("zorblax").digest("hex")]] as const;
@@ -180,6 +180,10 @@ test("[GUARD-04] user home paths built at runtime are found; the local cqstack a
     ["C:", "Users", "someone", "x"].join("\\"),
     JSON.stringify({ path: ["C:", "Users", "someone", "demo"].join("\\") }),
     "~/.cqstack/projects/x/",
+    ["", "Users", "someone"].join("/"),
+    JSON.stringify({ path: ["", "home", "someone"].join("/") }),
+    ["C:", "Users", "someone"].join("\\"),
+    JSON.stringify({ path: ["C:", "Users", "someone"].join("\\") }),
   ];
   const directory = directoryWithFiles({ "paths.txt": lines.join("\n") });
   assert.deepEqual(findViolations(directory, ["paths.txt"], FORBIDDEN_TERMS, []), [
@@ -187,6 +191,10 @@ test("[GUARD-04] user home paths built at runtime are found; the local cqstack a
     "paths.txt:2: user home path",
     "paths.txt:3: user home path",
     "paths.txt:4: user home path",
+    "paths.txt:6: user home path",
+    "paths.txt:7: user home path",
+    "paths.txt:8: user home path",
+    "paths.txt:9: user home path",
   ]);
 });
 
