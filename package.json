@@ -6,7 +6,7 @@
   "engines": { "node": ">=20" },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "npm run build && node --test dist/runtime/tests/*.test.js",
+    "test": "tsc -p core/tsconfig.json && node --test dist/core/tests/*.test.js",
     "cli": "node dist/cli/main.js",
     "doctor": "npm run cli -- doctor",
     "mcp": "node dist/mcp/server.js"
