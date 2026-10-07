@@ -187,6 +187,15 @@ test("[GUARD-04] user home paths built at runtime are found; the local cqstack a
     JSON.stringify({ path: ["", "home", "someone"].join("/") }),
     ["C:", "Users", "someone"].join("\\"),
     JSON.stringify({ path: ["C:", "Users", "someone"].join("\\") }),
+    ["c:", "Users", "someone"].join("\\"),
+    JSON.stringify({ path: ["c:", "Users", "someone"].join("\\") }),
+    ["A:", "Users", "someone"].join("\\"),
+    ["Z:", "Users", "someone"].join("\\"),
+    ["a:", "Users", "someone"].join("\\"),
+    ["z:", "Users", "someone"].join("\\"),
+    ["", "home", "a"].join("/"),
+    ["", "home", ""].join("/"),
+    ["", "Users", ""].join("/"),
   ];
   const directory = directoryWithFiles({ "paths.txt": lines.join("\n") });
   assert.deepEqual(findViolations(directory, ["paths.txt"], FORBIDDEN_TERMS, []), [
@@ -198,6 +207,13 @@ test("[GUARD-04] user home paths built at runtime are found; the local cqstack a
     "paths.txt:7: user home path",
     "paths.txt:8: user home path",
     "paths.txt:9: user home path",
+    "paths.txt:10: user home path",
+    "paths.txt:11: user home path",
+    "paths.txt:12: user home path",
+    "paths.txt:13: user home path",
+    "paths.txt:14: user home path",
+    "paths.txt:15: user home path",
+    "paths.txt:16: user home path",
   ]);
 });
 

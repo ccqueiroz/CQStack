@@ -68,7 +68,9 @@ function expectProfileError(action: () => unknown, code: ProfileErrorCode): stri
 }
 
 test("[PROF-01] a valid profile is returned deep-equal to the file", () => {
-  assert.deepEqual(loadProfile(projectRootWithProfile(VALID_PROFILE)), VALID_PROFILE);
+  for (const profile of [VALID_PROFILE, { ...VALID_PROFILE, project_id: "a".repeat(64) }]) {
+    assert.deepEqual(loadProfile(projectRootWithProfile(profile)), profile);
+  }
 });
 
 test("[PROF-02] a missing, empty or blank project root is rejected even when the cwd has a profile", () => {
@@ -154,14 +156,15 @@ test("[LANG-02] every closed artifact key, and an empty by_artifact, is returned
     default: "en",
     by_artifact: { research: "en", plan: "pt-BR", commit: "en", test: "en", readme: "pt-BR", pull_request: "pt-BR" },
   };
-  for (const language of [everyKey, { default: "en", by_artifact: {} }]) {
+  const longestTags = { default: "spa", by_artifact: { commit: `en-${"a".repeat(8)}` } };
+  for (const language of [everyKey, { default: "en", by_artifact: {} }, longestTags]) {
     const profile = { ...VALID_PROFILE, language };
     assert.deepEqual(loadProfile(projectRootWithProfile(profile)), profile);
   }
 });
 
 test("[PROV-01] providers_required is returned unchanged and in order, with unknown provider ids", () => {
-  for (const providers of [["zeta-llm", "alpha-llm"], ["solo"]]) {
+  for (const providers of [["zeta-llm", "alpha-llm"], ["solo"], ["a".repeat(32)]]) {
     const profile = { ...VALID_PROFILE, providers_required: providers };
     assert.deepEqual(loadProfile(projectRootWithProfile(profile)), profile);
   }
@@ -243,16 +246,37 @@ test("[PROF-09] a value of the wrong type is rejected", () => {
 test("[PROF-09] a value outside the fixed formats is rejected", () => {
   const cases: Array<[pointer: string, values: unknown[]]> = [
     ["/project_id", ["Acme-toy", "-acme", ".acme", "a/b", "", "a".repeat(65)]],
-    ["/language/default", ["english", "EN", ""]],
+    ["/language/default", ["english", "EN", "", "e", "engl", "en-", "en-abcdefghi", "en-x_y"]],
     ["/language/by_artifact/commit", ["English"]],
-    ["/commit_identity/name", ["<Ada>", " Ada", "Ada ", "Ada\nExample", ""]],
-    ["/commit_identity/email", ["ada", "ada@example", "ada example@example.com", "<ada@example.com>"]],
+    ["/commit_identity/name", ["<Ada>", " Ada", "Ada ", "Ada\nExample", "", "<Ada", ">Ada", "A<a", "A>a", "Ada\rExample", "Ada<", "Ada>"]],
+    [
+      "/commit_identity/email",
+      [
+        "ada",
+        "ada@example",
+        "ada example@example.com",
+        "<ada@example.com>",
+        "a@b@example.com",
+        "<ada@example.com",
+        ">ada@example.com",
+        "@example.com",
+        "ada@exa mple.com",
+        "ada@<example.com",
+        "ada@example>.com",
+        "ada@.com",
+        "ada@example.com x",
+        "ada@example.com@x",
+        "ada@example.com<",
+        "ada@example.com>",
+        "ada@example.",
+      ],
+    ],
     ["/repositories", [[]]],
     ["/repositories/0/id", ["App", "a:b"]],
     ["/repositories/0/path", [""]],
     ["/knowledge_store/path", [""]],
     ["/knowledge_store/deliveries_dir", [""]],
-    ["/knowledge_store/remote", ["-oProxyCommand=x", "has space", ""]],
+    ["/knowledge_store/remote", ["-oProxyCommand=x", "has space", "", " git@example.com:acme/store.git"]],
     ["/state_dir", [""]],
   ];
   for (const [pointer, values] of cases) {
@@ -344,7 +368,10 @@ test("[REPO-01] repeated repository ids are rejected", () => {
 
 test("[PROF-09] a path field that is not a relative path is rejected", () => {
   const cases: Array<[pointer: string, values: string[]]> = [
-    ["/repositories/0/path", ["/abs", "-x", "a\\b", "a/../b", "..", "a\u0000b", "C:/outside", "C:outside"]],
+    [
+      "/repositories/0/path",
+      ["/abs", "-x", "a\\b", "a/../b", "..", "a\u0000b", "C:/outside", "C:outside", "a:/outside", "z:/outside", "A:/outside", "Z:/outside"],
+    ],
     ["/knowledge_store/path", ["..", "C:/outside", "C:outside"]],
     ["/knowledge_store/deliveries_dir", ["../x", "C:/outside", "C:outside"]],
   ];
