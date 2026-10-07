@@ -211,6 +211,14 @@ test("[GUARD-05] symbolic links and files missing from the working tree are skip
   ]);
 });
 
+test("[GUARD-05] [GUARD-06] with the real LEGACY_PATHS, files under core/src/ and core/tests/ are scanned", () => {
+  const files = { "core/src/profile.ts": "zorblax", "core/tests/core-guard.test.ts": "zorblax" };
+  assert.deepEqual(findViolations(directoryWithFiles(files), Object.keys(files), FICTITIOUS_TERMS, LEGACY_PATHS), [
+    "core/src/profile.ts:1: forbidden term #0",
+    "core/tests/core-guard.test.ts:1: forbidden term #0",
+  ]);
+});
+
 test("[GUARD-06] listing files outside a git repository throws", () => {
   const directory = directoryWithFiles({ "file.txt": "x" });
   const originalCeiling = process.env.GIT_CEILING_DIRECTORIES;
