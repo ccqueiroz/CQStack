@@ -104,6 +104,33 @@ const ajv = new Ajv({ allErrors: true, strict: true });
 const validateEvent = ajv.compile(EVENT_SCHEMA);
 // the graph alone, so create refuses it before the canonical hash, which throws on a bigint and recurses on a cycle
 const validateGraph = ajv.compile(EVENT_SCHEMA.properties.graph);
+// the shape observeProcess returns, checked for the same reason before the observation is hashed into payload_hash
+const NUMBER_SCHEMA = { type: "number" };
+const TEXT_LIST_SCHEMA = { type: "array", items: { type: "string" } };
+const validateObservation = ajv.compile(
+  objectSchema(
+    {
+      root_id: ID_SCHEMA,
+      item_id: ID_SCHEMA,
+      command: { type: "string" },
+      timeout_ms: NUMBER_SCHEMA,
+      elapsed_ms: NUMBER_SCHEMA,
+      exit_code: { type: ["number", "null"] },
+      signal: { type: ["string", "null"] },
+      prompt_bytes: NUMBER_SCHEMA,
+      prompt_hash: HASH_SCHEMA,
+      stdout_bytes: NUMBER_SCHEMA,
+      stdout_hash: HASH_SCHEMA,
+      stderr_bytes: NUMBER_SCHEMA,
+      stderr_hash: HASH_SCHEMA,
+      stderr: { type: "string" },
+      errors: TEXT_LIST_SCHEMA,
+      tool_calls: TEXT_LIST_SCHEMA,
+    },
+    ["root_id", "command", "timeout_ms", "elapsed_ms", "exit_code", "signal", "prompt_bytes", "prompt_hash", "stdout_bytes",
+      "stdout_hash", "stderr_bytes", "stderr_hash", "stderr", "errors", "tool_calls"],
+  ),
+);
 
 export function eventViolations(value: unknown): string[] {
   if (validateEvent(value)) return [];
@@ -221,11 +248,14 @@ export class EventLog {
     const { log, lock } = this.files(rootId);
     const author = requireActor(request?.actor);
     const { observation } = request;
-    if (observation?.root_id !== rootId)
+    const itemId = observation?.item_id;
+    if (observation?.root_id !== rootId || (itemId !== undefined && !(typeof itemId === "string" && ID_PATTERN.test(itemId))))
       throw new StateError(
         "OBSERVATION_ATTRIBUTION_INVALID",
         "Observation needs the root_id of its root and, when given, a valid item_id",
       );
+    if (!validateObservation(observation))
+      throw new StateError("OBSERVATION_INPUT_INVALID", "Observation needs a process request and outcome with the documented field types");
     assertNoSymlinks(log);
     if (!existsSync(log)) throw new StateError("ROOT_NOT_FOUND", `Root has no event log: ${log}`);
     return withMutex(lock, () => {

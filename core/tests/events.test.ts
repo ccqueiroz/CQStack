@@ -1196,3 +1196,66 @@ test("[GRAPH-11] [ACTOR-05] a write request that is not an object is refused bef
   assert.deepEqual(bytesOf(stateDir), before);
   assert.equal(existsSync(join(stateDir, "r1.lock")), false);
 });
+
+test("[OBS-03] [OBS-07] an observation that is incomplete or has a field of another type is refused before the hash, without writing", () => {
+  const stateDir = temporaryDirectory();
+  const log = createdRoot(stateDir, "L");
+  const before = bytesOf(stateDir);
+  const base = observationOf({ root_id: "r1", item_id: "item-1" }) as unknown as Record<string, unknown>;
+  const record = (observation: unknown) => () =>
+    log.recordObservation("r1", { actor: WORKER, observation: observation as Observation, payload_ref: "observations/one.json" });
+  // shapes the canonical hash cannot take: a bigint, an object that holds itself, a list that holds itself
+  const holdsItself: Record<string, unknown> = { a: 1 };
+  holdsItself.self = holdsItself;
+  const listHoldsItself: unknown[] = [];
+  listHoldsItself.push(listHoldsItself);
+  for (const item_id of ["Item", "", 1, null, 1n, holdsItself, ["item-1"]]) {
+    expectStateError(record({ ...base, item_id }), "OBSERVATION_ATTRIBUTION_INVALID", `item_id ${String(item_id)}`);
+  }
+  const numbers = ["1", null, NaN, Infinity, -Infinity, 1n, holdsItself, [1]];
+  const texts = [1, null, ["provider-cli"], 1n, holdsItself];
+  const hashes = ["x", "A".repeat(64), "a".repeat(63), "a".repeat(65), 1, null, 1n, ["a".repeat(64)]];
+  const lists = ["m1", null, [1], [null], [1n], [["m1"]], [holdsItself], listHoldsItself];
+  const malformed: Record<string, unknown[]> = {
+    command: texts,
+    timeout_ms: numbers,
+    elapsed_ms: numbers,
+    exit_code: ["0", NaN, Infinity, -Infinity, 1n, holdsItself, [0]],
+    signal: [1, ["SIGTERM"], 1n, holdsItself],
+    prompt_bytes: numbers,
+    prompt_hash: hashes,
+    stdout_bytes: numbers,
+    stdout_hash: hashes,
+    stderr_bytes: numbers,
+    stderr_hash: hashes,
+    stderr: texts,
+    errors: lists,
+    tool_calls: lists,
+  };
+  for (const [field, values] of Object.entries(malformed)) {
+    for (const value of values) {
+      expectStateError(record({ ...base, [field]: value }), "OBSERVATION_INPUT_INVALID", `${field} ${String(value)}`);
+    }
+    const incomplete = { ...base };
+    delete incomplete[field];
+    expectStateError(record(incomplete), "OBSERVATION_INPUT_INVALID", `${field} missing`);
+  }
+  expectStateError(record({ ...base, env: { CQSTACK_FAKE_NAME_7: "fake-value-7" } }), "OBSERVATION_INPUT_INVALID", "extra field");
+  expectStateError(record({ ...base, loop: holdsItself }), "OBSERVATION_INPUT_INVALID", "extra field that holds itself");
+  assert.deepEqual(bytesOf(stateDir), before);
+  assert.equal(existsSync(join(stateDir, "r1.lock")), false);
+  const accepted = [
+    observationOf({ root_id: "r1" }),
+    observeProcess(
+      { root_id: "r1", item_id: "item-2" },
+      { command: "", stdin: "", timeout_ms: 0.5 },
+      { exit_code: null, stdout: JSON.stringify({ type: "error", message: "m1" }), stderr: "", signal: "SIGTERM" },
+      2.5,
+    ),
+  ];
+  for (const observation of accepted) {
+    const event = log.recordObservation("r1", { actor: WORKER, observation, payload_ref: "observations/two.json" });
+    assert.equal(event.payload_hash, canonicalHash(observation));
+  }
+  assert.equal(log.events("r1").length, 3);
+});
