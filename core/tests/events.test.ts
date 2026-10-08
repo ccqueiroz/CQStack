@@ -1635,3 +1635,42 @@ test("[LOG-01] [LOG-11] a folder of another user in the state path is refused; w
   assert.equal(new EventLog(stateDir, PROFILE, V1).events("r1").length, 1);
   assertStatePathRefused(wideState, "with process.getuid");
 });
+
+test("[LOG-01] [LOG-11] the state path is checked before the mutex, so a refused path never reaches the lock", () => {
+  const base = temporaryDirectory();
+  const held = JSON.stringify({ pid: 1, created_at: "2026-10-08T00:00:00.000Z" });
+  // a lock already in place: a write that took the mutex before checking the path would fail with ROOT_LOCKED instead
+  const open = join(base, "open");
+  mkdirSync(open);
+  const stateDir = join(open, "state");
+  createdRoot(stateDir, "L");
+  writeFileSync(join(stateDir, "r1.lock"), held);
+  chmodSync(open, 0o757);
+  const realState = join(base, "real-parent", "state");
+  createdRoot(realState, "L");
+  writeFileSync(join(realState, "r1.lock"), held);
+  symlinkSync(join(base, "real-parent"), join(base, "linked-parent"));
+  const graphHash = canonicalHash(buildGraph("L"));
+  const cases: Array<[string, StateErrorCode]> = [
+    [stateDir, "STATE_DIR_INVALID"],
+    [join(base, "linked-parent", "state"), "SYMLINK_REJECTED"],
+  ];
+  for (const [directory, code] of cases) {
+    const log = new EventLog(directory, PROFILE, V1);
+    expectStateError(
+      () => log.transition("r1", { to: "TASK_CLASSIFIED", expected_revision: 0, graph_hash: graphHash, actor: { kind: "harness", id: "v9.9.9" } }),
+      code,
+      `transition ${directory}`,
+    );
+    expectStateError(
+      () => log.recordObservation("r1", { actor: WORKER, observation: observationOf({ root_id: "r1" }), payload_ref: "observations/one.json" }),
+      code,
+      `observation ${directory}`,
+    );
+    expectStateError(() => log.create("r1", { graph: buildGraph("L"), actor: ADA }), code, `create ${directory}`);
+  }
+  for (const directory of [stateDir, realState]) {
+    assert.equal(readFileSync(join(directory, "r1.lock"), "utf8"), held);
+    assert.equal(readFileSync(join(directory, "r1.jsonl"), "utf8").split("\n").length, 2);
+  }
+});
