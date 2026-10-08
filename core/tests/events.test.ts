@@ -16,7 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { StateError, canonicalHash, type StateErrorCode } from "../src/storage.js";
 import { buildGraph, type RootState, type Track } from "../src/graph.js";
-import { EVENT_SCHEMA, EventLog, eventViolations, type Actor, type HarnessVersion } from "../src/events.js";
+import { EVENT_SCHEMA, EventLog, eventViolations, type Actor, type Event, type HarnessVersion } from "../src/events.js";
 import { PROFILE_FILE_NAME, loadProfile, type ProjectProfile } from "../src/profile.js";
 
 const V1: HarnessVersion = { tag: "v9.9.9", commit: "1".repeat(40) };
@@ -681,4 +681,282 @@ test("[VER-02] a malformed harness version stops every create", () => {
   }
   assert.equal(existsSync(join(stateDir, "r1.jsonl")), false);
   assert.equal(existsSync(join(stateDir, "r1.lock")), false);
+});
+
+const HUMAN_EDGES_ORACLE = [
+  "GAP_DEFINED>DECIDED",
+  "PLAN_PROPOSED>PLAN_APPROVED",
+  "PR_OPEN>LOTE_MERGED",
+  "NEEDS_HUMAN>LOTE_RUNNING",
+  "NEEDS_HUMAN>DONE",
+];
+const L_PATH_TO_GAP: RootState[] = ["TASK_CLASSIFIED", "TASK_SENSE_COMPLETE", "DISCOVERY_COMPLETE", "FLOW_COMPLETE", "TRUTH_VERIFIED", "GAP_DEFINED"];
+
+function actorFor(from: RootState, to: RootState, version: HarnessVersion = V1): Actor {
+  return HUMAN_EDGES_ORACLE.includes(`${from}>${to}`) ? ADA : { kind: "harness", id: version.tag ?? version.commit };
+}
+
+function createdRoot(stateDir: string, track: Track, path: RootState[] = [], version: HarnessVersion = V1): EventLog {
+  const log = new EventLog(stateDir, PROFILE, version);
+  log.create("r1", { graph: buildGraph(track), actor: ADA });
+  advance(log, path, version);
+  return log;
+}
+
+function advance(log: EventLog, path: RootState[], version: HarnessVersion = V1): Event[] {
+  return path.map((to) => {
+    const view = log.state("r1");
+    return log.transition("r1", {
+      to,
+      expected_revision: view.revision,
+      graph_hash: view.graph_hash,
+      actor: actorFor(view.state, to, version),
+    });
+  });
+}
+
+function bytesOf(stateDir: string): Buffer {
+  const file = join(stateDir, "r1.jsonl");
+  assert.equal(existsSync(file), true);
+  return readFileSync(file);
+}
+
+test("[GRAPH-09] [ACTOR-10] [VER-01] a harness transition carries the task.created graph_hash, the tag as actor id and the harness version", () => {
+  const stateDir = temporaryDirectory();
+  const log = createdRoot(stateDir, "L");
+  const graphHash = canonicalHash(buildGraph("L"));
+  const actor: Actor = { kind: "harness", id: "v9.9.9" };
+  const event = log.transition("r1", { to: "TASK_CLASSIFIED", expected_revision: 0, graph_hash: graphHash, actor });
+  assert.equal(event.seq, 2);
+  assert.equal(event.event_type, "transition.TASK_RECEIVED.TASK_CLASSIFIED");
+  assert.equal(event.graph_hash, graphHash);
+  assert.deepEqual(event.actor, actor);
+  assert.deepEqual(event.harness_version, V1);
+  assert.equal("graph" in event, false);
+  assert.deepEqual(log.events("r1")[1], event);
+  assert.equal(log.state("r1").state, "TASK_CLASSIFIED");
+  assert.equal(log.state("r1").revision, 1);
+});
+
+test("[ACTOR-12] outside a tag the harness actor id is the commit, and on a tag it is the tag", () => {
+  const offTag = temporaryDirectory();
+  const offTagLog = createdRoot(offTag, "L", [], V2);
+  const graphHash = canonicalHash(buildGraph("L"));
+  const request = { to: "TASK_CLASSIFIED" as RootState, expected_revision: 0, graph_hash: graphHash };
+  expectStateError(() => offTagLog.transition("r1", { ...request, actor: { kind: "harness", id: "v9.9.9" } }), "ACTOR_ID_INVALID", "tag off a tag");
+  assert.equal(offTagLog.transition("r1", { ...request, actor: { kind: "harness", id: "2".repeat(40) } }).actor.id, "2".repeat(40));
+  const onTag = temporaryDirectory();
+  const onTagLog = createdRoot(onTag, "L");
+  expectStateError(() => onTagLog.transition("r1", { ...request, actor: { kind: "harness", id: "1".repeat(40) } }), "ACTOR_ID_INVALID", "commit on a tag");
+});
+
+test("[ACTOR-09] transitions to DECIDED, PLAN_APPROVED and LOTE_MERGED and out of NEEDS_HUMAN are human, with the profile email", () => {
+  const stateDir = temporaryDirectory();
+  const log = createdRoot(stateDir, "L");
+  const path: RootState[] = [
+    ...L_PATH_TO_GAP,
+    "DECIDED",
+    "PLAN_PROPOSED",
+    "PLAN_APPROVED",
+    "CONTRACT_FROZEN",
+    "LOTE_RUNNING",
+    "PR_OPEN",
+    "LOTE_MERGED",
+    "LOTE_RUNNING",
+    "NEEDS_HUMAN",
+    "LOTE_RUNNING",
+    "PR_OPEN",
+    "NEEDS_HUMAN",
+    "DONE",
+  ];
+  const events = advance(log, path);
+  assert.equal(log.state("r1").state, "DONE");
+  const expectedKinds = [
+    "harness", "harness", "harness", "harness", "harness", "harness",
+    "human", "harness", "human", "harness", "harness", "harness", "human",
+    "harness", "harness", "human", "harness", "harness", "human",
+  ];
+  assert.deepEqual(events.map((event) => event.actor.kind), expectedKinds);
+  for (const event of events.filter((item) => item.actor.kind === "human")) assert.equal(event.actor.id, "ada@example.com");
+  const second = createdRoot(temporaryDirectory(), "L");
+  const tail = advance(second, [...path.slice(0, 13), "DONE"]);
+  assert.equal(second.state("r1").state, "DONE");
+  assert.deepEqual(tail.map((event) => event.actor.kind), [...expectedKinds.slice(0, 13), "harness"]);
+});
+
+test("[ACTOR-06] a caller kind other than the one of the transition is refused", () => {
+  const stateDir = temporaryDirectory();
+  const log = createdRoot(stateDir, "L");
+  const graphHash = canonicalHash(buildGraph("L"));
+  const before = bytesOf(stateDir);
+  for (const actor of [ADA, { kind: "worker", id: "child-1" } as Actor]) {
+    expectStateError(
+      () => log.transition("r1", { to: "TASK_CLASSIFIED", expected_revision: 0, graph_hash: graphHash, actor }),
+      "ACTOR_KIND_MISMATCH",
+      actor.kind,
+    );
+  }
+  assert.deepEqual(bytesOf(stateDir), before);
+  advance(log, L_PATH_TO_GAP);
+  const atGap = bytesOf(stateDir);
+  expectStateError(
+    () => log.transition("r1", { to: "DECIDED", expected_revision: 6, graph_hash: graphHash, actor: { kind: "harness", id: "v9.9.9" } }),
+    "ACTOR_KIND_MISMATCH",
+    "harness to DECIDED",
+  );
+  assert.deepEqual(bytesOf(stateDir), atGap);
+});
+
+test("[ACTOR-05] a transition without actor is refused, with no default author", () => {
+  const stateDir = temporaryDirectory();
+  const log = createdRoot(stateDir, "L");
+  const graphHash = canonicalHash(buildGraph("L"));
+  const before = bytesOf(stateDir);
+  expectStateError(() => log.transition("r1", { to: "TASK_CLASSIFIED", expected_revision: 0, graph_hash: graphHash }), "ACTOR_REQUIRED", "absent");
+  expectStateError(
+    () => log.transition("r1", { to: "TASK_CLASSIFIED", expected_revision: 0, graph_hash: graphHash, actor: null }),
+    "ACTOR_REQUIRED",
+    "null",
+  );
+  assert.deepEqual(bytesOf(stateDir), before);
+});
+
+test("[LOG-09] [LOCK-03] a transition with a stale expected revision is refused without writing and leaves no mutex", () => {
+  const stateDir = temporaryDirectory();
+  const log = createdRoot(stateDir, "L", ["TASK_CLASSIFIED"]);
+  const graphHash = canonicalHash(buildGraph("L"));
+  const before = bytesOf(stateDir);
+  const actor: Actor = { kind: "harness", id: "v9.9.9" };
+  for (const expected_revision of [0, 2, -1]) {
+    expectStateError(
+      () => log.transition("r1", { to: "TASK_SENSE_COMPLETE", expected_revision, graph_hash: graphHash, actor }),
+      "REVISION_STALE",
+      String(expected_revision),
+    );
+    assert.deepEqual(bytesOf(stateDir), before);
+    assert.equal(existsSync(join(stateDir, "r1.lock")), false);
+  }
+  assert.equal(log.transition("r1", { to: "TASK_SENSE_COMPLETE", expected_revision: 1, graph_hash: graphHash, actor }).seq, 3);
+  assert.equal(existsSync(join(stateDir, "r1.lock")), false);
+});
+
+test("[GRAPH-14] a transition with another graph_hash, or on a graph that no longer has its graph_hash, is refused with GRAPH_MISMATCH", () => {
+  const stateDir = temporaryDirectory();
+  const log = createdRoot(stateDir, "L");
+  const before = bytesOf(stateDir);
+  const actor: Actor = { kind: "harness", id: "v9.9.9" };
+  for (const graph_hash of [canonicalHash(buildGraph("S")), "0".repeat(64), ""]) {
+    expectStateError(
+      () => log.transition("r1", { to: "TASK_CLASSIFIED", expected_revision: 0, graph_hash, actor }),
+      "GRAPH_MISMATCH",
+      graph_hash,
+    );
+  }
+  assert.deepEqual(bytesOf(stateDir), before);
+  const [created] = log.events("r1");
+  const edges = [...created.graph!.edges, { from: "TASK_RECEIVED" as RootState, to: "DONE" as RootState }];
+  writeLog(stateDir, "r1", [{ ...created, graph: { ...created.graph!, edges } }]);
+  const edited = bytesOf(stateDir);
+  expectStateError(
+    () => log.transition("r1", { to: "DONE", expected_revision: 0, graph_hash: created.graph_hash, actor }),
+    "GRAPH_MISMATCH",
+    "graph edited under the recorded graph_hash",
+  );
+  assert.deepEqual(bytesOf(stateDir), edited);
+});
+
+test("[GRAPH-16] [TRACK-03] a transition that is not an edge of the recorded graph is refused", () => {
+  const actor: Actor = { kind: "harness", id: "v9.9.9" };
+  const lDir = temporaryDirectory();
+  const lLog = createdRoot(lDir, "L");
+  const lHash = canonicalHash(buildGraph("L"));
+  const lBefore = bytesOf(lDir);
+  for (const to of ["DONE", "TASK_SENSE_COMPLETE", "TRUTH_VERIFIED", "BOGUS"]) {
+    expectStateError(
+      () => lLog.transition("r1", { to: to as RootState, expected_revision: 0, graph_hash: lHash, actor }),
+      "TRANSITION_NOT_IN_GRAPH",
+      to,
+    );
+  }
+  assert.deepEqual(bytesOf(lDir), lBefore);
+  const sDir = temporaryDirectory();
+  const sLog = createdRoot(sDir, "S", ["TASK_CLASSIFIED", "TASK_SENSE_COMPLETE", "DISCOVERY_COMPLETE"]);
+  const sHash = canonicalHash(buildGraph("S"));
+  const sBefore = bytesOf(sDir);
+  for (const to of ["FLOW_COMPLETE", "GAP_DEFINED"] as RootState[]) {
+    expectStateError(() => sLog.transition("r1", { to, expected_revision: 3, graph_hash: sHash, actor }), "TRANSITION_NOT_IN_GRAPH", to);
+  }
+  assert.deepEqual(bytesOf(sDir), sBefore);
+  assert.equal(sLog.transition("r1", { to: "PLAN_PROPOSED", expected_revision: 3, graph_hash: sHash, actor }).seq, 5);
+});
+
+test("[LOG-08] [TRACK-02] after accepted transitions the state is the one re-read from the file, with the track of task.created", () => {
+  const stateDir = temporaryDirectory();
+  createdRoot(stateDir, "S", ["TASK_CLASSIFIED", "TASK_SENSE_COMPLETE", "DISCOVERY_COMPLETE", "PLAN_PROPOSED"]);
+  assert.deepEqual(new EventLog(stateDir, PROFILE, V2).state("r1"), {
+    root_id: "r1",
+    track: "S",
+    state: "PLAN_PROPOSED",
+    revision: 4,
+    graph_hash: canonicalHash(buildGraph("S")),
+  });
+});
+
+test("[LOG-07] [GRAPH-13] [LOCK-01] a transition on a missing, truncated or graphless log, or on a locked root, adds no byte", () => {
+  const actor: Actor = { kind: "harness", id: "v9.9.9" };
+  const graphHash = canonicalHash(buildGraph("L"));
+  const request = { to: "TASK_CLASSIFIED" as RootState, expected_revision: 0, graph_hash: graphHash, actor };
+  const missing = join(temporaryDirectory(), "state");
+  expectStateError(() => new EventLog(missing, PROFILE, V1).transition("r1", request), "ROOT_NOT_FOUND");
+  assert.equal(existsSync(missing), false);
+  const stateDir = temporaryDirectory();
+  const log = new EventLog(stateDir, PROFILE, V1);
+  const [created] = handLog("r1", "L", []);
+  const cases: Array<[string, StateErrorCode]> = [
+    [JSON.stringify(created), "LOG_TRUNCATED"],
+    [JSON.stringify(observedLine("r1", 1, graphHash)) + "\n", "GRAPH_MISSING"],
+  ];
+  for (const [text, code] of cases) {
+    writeFileSync(join(stateDir, "r1.jsonl"), text);
+    expectStateError(() => log.transition("r1", request), code);
+    assert.equal(readFileSync(join(stateDir, "r1.jsonl"), "utf8"), text);
+    assert.equal(existsSync(join(stateDir, "r1.lock")), false);
+  }
+  writeFileSync(join(stateDir, "r1.jsonl"), JSON.stringify(created) + "\n");
+  const lockText = JSON.stringify({ pid: process.pid, created_at: "2026-10-07T00:00:00.000Z" });
+  writeFileSync(join(stateDir, "r1.lock"), lockText);
+  expectStateError(() => log.transition("r1", request), "ROOT_LOCKED");
+  assert.equal(readFileSync(join(stateDir, "r1.jsonl"), "utf8"), JSON.stringify(created) + "\n");
+  assert.equal(readFileSync(join(stateDir, "r1.lock"), "utf8"), lockText);
+});
+
+test("[LOG-03] [VER-04] a second harness version appends without changing earlier bytes, and each event keeps its version", () => {
+  const stateDir = temporaryDirectory();
+  createdRoot(stateDir, "L", ["TASK_CLASSIFIED", "TASK_SENSE_COMPLETE"]);
+  const before = bytesOf(stateDir);
+  const second = new EventLog(stateDir, PROFILE, V2);
+  advance(second, ["DISCOVERY_COMPLETE"], V2);
+  const after = bytesOf(stateDir);
+  assert.deepEqual(after.subarray(0, before.length), before);
+  assert.deepEqual(
+    second.events("r1").map((event) => event.harness_version),
+    [V1, V1, V1, V2],
+  );
+});
+
+test("[PROOF-01] editing the ts or the actor role of earlier events breaks neither the read nor the next write", () => {
+  const stateDir = temporaryDirectory();
+  const log = createdRoot(stateDir, "L", ["TASK_CLASSIFIED", "TASK_SENSE_COMPLETE"]);
+  const edited = log.events("r1").map((event, index) => {
+    if (index === 0) return { ...event, ts: "2001-01-01T00:00:00.000Z" };
+    if (index === 1) return { ...event, ts: "2001-01-01T00:00:01.000Z", actor: { ...event.actor, role: "edited" } };
+    return event;
+  });
+  writeLog(stateDir, "r1", edited);
+  assert.deepEqual(log.events("r1"), edited);
+  const view = log.state("r1");
+  assert.equal(
+    log.transition("r1", { to: "DISCOVERY_COMPLETE", expected_revision: view.revision, graph_hash: view.graph_hash, actor: actorFor(view.state, "DISCOVERY_COMPLETE") }).seq,
+    4,
+  );
 });

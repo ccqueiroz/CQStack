@@ -180,6 +180,37 @@ export class EventLog {
     });
   }
 
+  transition(
+    rootId: string,
+    request: { to: RootState; expected_revision: number; graph_hash: string; actor?: Actor | null },
+  ): Event {
+    const { log, lock } = this.files(rootId);
+    const author = requireActor(request.actor);
+    assertNoSymlinks(log);
+    // checked before the mutex, so a missing state directory never gets a lock file
+    if (!existsSync(log)) throw new StateError("ROOT_NOT_FOUND", `Root has no event log: ${log}`);
+    return withMutex(lock, () => {
+      const { events, view } = this.read(rootId, log);
+      if (request.graph_hash !== view.graph_hash)
+        throw new StateError("GRAPH_MISMATCH", `Graph differs from the one recorded in task.created: ${rootId}`);
+      if (request.expected_revision !== view.revision)
+        throw new StateError(
+          "REVISION_STALE",
+          `Expected revision ${request.expected_revision}, current revision is ${view.revision}: ${rootId}`,
+        );
+      if (!isEdge(events[0].graph!, view.state, request.to))
+        throw new StateError("TRANSITION_NOT_IN_GRAPH", `Transition is not an edge of the recorded graph: ${view.state} -> ${request.to}`);
+      const event = this.seal(rootId, {
+        seq: events.length + 1,
+        event_type: `transition.${view.state}.${request.to}`,
+        actor: author,
+        graph_hash: view.graph_hash,
+      });
+      appendLine(log, JSON.stringify(event));
+      return event;
+    });
+  }
+
   events(rootId: string): Event[] {
     return this.read(rootId, this.files(rootId).log).events;
   }
