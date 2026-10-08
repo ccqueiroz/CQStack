@@ -206,8 +206,9 @@ export class EventLog {
       throw new StateError("STATE_DIR_INVALID", `State directory must be a non-empty, absolute, normalized path: ${String(stateDir)}`);
     this.stateDir = stateDir;
     this.profile = profile;
-    // copied here and into each event, so neither the caller nor a returned event changes the version read at boot
-    this.harnessVersion = { ...harnessVersion };
+    // copied here and into each event, so neither the caller nor a returned event changes the version read at boot; copied as its JSON
+    // line carries it, so the harness actor id is checked against the version the events write (none, or null: an empty version)
+    this.harnessVersion = (asWritten({ ...harnessVersion }) ?? {}) as HarnessVersion;
   }
 
   create(rootId: string, request: { graph?: Graph | null; actor?: Actor | null }): Event {

@@ -1482,3 +1482,29 @@ test("[ACTOR-04] [GRAPH-08] [LOG-03] the schema reads the actor as the line carr
   assert.deepEqual(fresh.events("r1"), [created]);
   assert.equal(fresh.state("r1").track, "L");
 });
+
+test("[ACTOR-10] [VER-01] [VER-02] the harness actor id is checked against the version as the events write it", () => {
+  const stateDir = temporaryDirectory();
+  const commit = "1".repeat(40);
+  const log = new EventLog(stateDir, PROFILE, { tag: "v9.9.9", commit, toJSON: () => ({ tag: "v1.0.0", commit }) } as HarnessVersion);
+  const created = log.create("r1", { graph: buildGraph("L"), actor: ADA });
+  assert.deepEqual(created.harness_version, { tag: "v1.0.0", commit });
+  const move = (id: string) => () =>
+    log.transition("r1", { to: "TASK_CLASSIFIED", expected_revision: 0, graph_hash: created.graph_hash, actor: { kind: "harness", id } });
+  expectStateError(move("v9.9.9"), "ACTOR_ID_INVALID", "tag of the version as given");
+  move("v1.0.0")();
+  assert.deepEqual(log.events("r1").map((event) => [event.actor.id, event.harness_version.tag]), [["ada@example.com", "v1.0.0"], ["v1.0.0", "v1.0.0"]]);
+  const before = bytesOf(stateDir);
+  // a version whose JSON is null, or that has no JSON text, is kept empty: the schema refuses it on create and the id rule on a harness move
+  for (const other of [{ ...V1, toJSON: () => null }, { ...V1, tag: 1n }]) {
+    const otherLog = new EventLog(stateDir, PROFILE, other as unknown as HarnessVersion);
+    expectStateError(() => otherLog.create("r2", { graph: buildGraph("L"), actor: ADA }), "EVENT_SCHEMA_VIOLATION", `create ${String(other.tag)}`);
+    expectStateError(
+      () => otherLog.transition("r1", { to: "TASK_SENSE_COMPLETE", expected_revision: 1, graph_hash: created.graph_hash, actor: { kind: "harness", id: "v9.9.9" } }),
+      "ACTOR_ID_INVALID",
+      `move ${String(other.tag)}`,
+    );
+  }
+  assert.deepEqual(bytesOf(stateDir), before);
+  assert.deepEqual(readdirSync(stateDir).sort(), ["r1.jsonl"]);
+});
