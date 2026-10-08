@@ -245,7 +245,8 @@ test("[LOG-01] [LOG-11] a sticky folder others may write is accepted above the s
   assertStatePathRefused(sticky, "sticky state directory");
 });
 
-test("[LOG-01] [LOG-11] a folder of another user in the state path is refused; without process.getuid (Windows) only the link check runs", () => {
+// as root every temporary folder belongs to root, which the path check always accepts, so no folder of "another owner" can be built
+test("[LOG-01] [LOG-11] a folder of another user in the state path is refused; without process.getuid (Windows) only the link check runs", { skip: process.getuid?.() === 0 && "root owns every temporary folder" }, () => {
   const base = temporaryDirectory();
   const stateDir = join(base, "state");
   createdRoot(stateDir, "L");
