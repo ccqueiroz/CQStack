@@ -102,7 +102,7 @@ export const EVENT_SCHEMA = {
 
 const ajv = new Ajv({ allErrors: true, strict: true });
 const validateEvent = ajv.compile(EVENT_SCHEMA);
-// the graph alone, so create refuses it before the canonical hash, which throws on a bigint and recurses on a cycle
+// the graph alone, so create refuses a graph with no JSON text (asWritten gives undefined) before canonicalHash throws a TypeError on it
 const validateGraph = ajv.compile(EVENT_SCHEMA.properties.graph);
 // the shape observeProcess returns, checked for the same reason before the observation is hashed into payload_hash
 const NUMBER_SCHEMA = { type: "number" };
