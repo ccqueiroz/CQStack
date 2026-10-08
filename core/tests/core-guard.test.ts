@@ -1,11 +1,11 @@
-import test, { after } from "node:test";
+import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { lstatSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { temporaryDirectory } from "./helpers.js";
 
 const REPOSITORY_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const FORBIDDEN_TERMS: ReadonlyArray<readonly [length: number, sha256: string]> =
@@ -15,6 +15,8 @@ const USER_HOME_PATH = /(?:\/(?:Users|home)\/|[A-Za-z]:\\{1,2}Users\\{1,2})[^\s\
 const LEGACY_PATHS = ["README.md", "config", "docs", "examples", "governance", "mcp", "runtime", "scripts"];
 const BASE_COMMIT = "f291a38d40e80149326a72cb8a8ddea3de9146a4";
 const FICTITIOUS_TERMS = [[7, createHash("sha256").update("zorblax").digest("hex")]] as const;
+// Decision 38: no MCP approval prompt. One 6-letter window covers every identifier of the SDK for it.
+const APPROVAL_PROMPT_TERMS: ReadonlyArray<readonly [length: number, sha256: string]> = [[6, "bd4df3af2f954c1a7f5b0bac498106d2e3c875551fbe906699faeda4abca74eb"]];
 
 function listRepositoryFiles(root: string): string[] {
   const output = execFileSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], {
@@ -73,14 +75,8 @@ function findViolations(
   return violations;
 }
 
-const temporaryDirectories: string[] = [];
-after(() => {
-  for (const directory of temporaryDirectories) rmSync(directory, { recursive: true, force: true });
-});
-
 function directoryWithFiles(files: Record<string, string>): string {
-  const directory = mkdtempSync(join(tmpdir(), "cqstack-guard-"));
-  temporaryDirectories.push(directory);
+  const directory = temporaryDirectory();
   for (const [path, content] of Object.entries(files)) {
     mkdirSync(dirname(join(directory, path)), { recursive: true });
     writeFileSync(join(directory, path), content);
@@ -262,4 +258,28 @@ test("[GUARD-06] listing files outside a git repository throws", () => {
     if (originalCeiling === undefined) delete process.env.GIT_CEILING_DIRECTORIES;
     else process.env.GIT_CEILING_DIRECTORIES = originalCeiling;
   }
+});
+
+test("[PROOF-03] [PROOF-04] MCP approval-prompt identifiers are found with file and line, the repository has none, and an empty term list fails", () => {
+  const files = {
+    "a.ts": "server." + ["eli", "citInput"].join("") + "({})",
+    "b.ts": "clean\n" + ["eli", "citation"].join("") + "/create",
+    "c.ts": ["Eli", "citRequestSchema"].join(""),
+    "d.ts": "Url" + ["Eli", "citationRequiredError"].join(""),
+    "clean.ts": "clean",
+  };
+  const violations = findViolations(directoryWithFiles(files), Object.keys(files), APPROVAL_PROMPT_TERMS, LEGACY_PATHS);
+  assert.deepEqual(violations, [
+    "a.ts:1: forbidden term #0",
+    "b.ts:2: forbidden term #0",
+    "c.ts:1: forbidden term #0",
+    "d.ts:1: forbidden term #0",
+  ]);
+  const term = ["eli", "cit"].join("");
+  for (const violation of violations) assert.ok(!violation.toLowerCase().includes(term), violation);
+  assert.deepEqual(
+    findViolations(REPOSITORY_ROOT, listRepositoryFiles(REPOSITORY_ROOT), APPROVAL_PROMPT_TERMS, LEGACY_PATHS),
+    [],
+  );
+  assert.throws(() => findViolations(directoryWithFiles({}), [], [], LEGACY_PATHS), { message: "GUARD_TERMS_INVALID" });
 });
