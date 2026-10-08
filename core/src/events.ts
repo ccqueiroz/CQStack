@@ -204,13 +204,14 @@ export class EventLog {
     const recorded = asWritten(graph) as Graph;
     if (!validateGraph(recorded)) throw new StateError("EVENT_SCHEMA_VIOLATION", `Graph does not match the schema of task.created: ${rootId}`);
     assertTrustedPath(log);
+    // sealed before the folder exists: seq is always 1 and the seal reads no log, so its refusals leave no folder behind
+    const event = this.seal(rootId, { seq: 1, event_type: "task.created", actor: author, graph: recorded, graph_hash: canonicalHash(recorded) });
     mkdirSync(this.stateDir, { recursive: true, mode: 0o700 });
     return withMutex(lock, () => {
       if (existsSync(log)) {
         this.read(rootId, log);
         throw new StateError("ROOT_EXISTS", `Root already has task.created: ${log}`);
       }
-      const event = this.seal(rootId, { seq: 1, event_type: "task.created", actor: author, graph: recorded, graph_hash: canonicalHash(recorded) });
       appendLine(log, JSON.stringify(event));
       return event;
     });

@@ -658,3 +658,18 @@ test("[GRAPH-16] [GRAPH-17] [LOG-08] each transition field is read from the call
   assert.deepEqual(log.events("r1").slice(1), [moved]);
   assert.deepEqual(log.state("r1"), { ...view, state: "TASK_CLASSIFIED", revision: 1 });
 });
+
+test("[ACTOR-06] [ACTOR-07] [ACTOR-08] [VER-02] a create refused by its author or its harness version creates no folder", () => {
+  const base = temporaryDirectory();
+  const stateDir = join(base, "nested", "state");
+  const refusals: Array<[HarnessVersion, Actor, StateErrorCode]> = [
+    [V1, { kind: "harness", id: "v9.9.9" }, "ACTOR_KIND_MISMATCH"],
+    [V1, { kind: "human", id: "eve@example.com" }, "ACTOR_ID_INVALID"],
+    [{ tag: "v9.9.9" } as HarnessVersion, ADA, "EVENT_SCHEMA_VIOLATION"],
+  ];
+  for (const [version, actor, code] of refusals) {
+    expectStateError(() => new EventLog(stateDir, PROFILE, version).create("r1", { graph: buildGraph("L"), actor }), code, JSON.stringify(actor));
+    assert.equal(existsSync(stateDir), false, code);
+  }
+  assert.deepEqual(readdirSync(base), []);
+});
