@@ -1322,3 +1322,20 @@ test("[ACTOR-08] a human write under a profile without commit_identity.email is 
   assert.deepEqual(bytesOf(stateDir), before);
   assert.deepEqual(readdirSync(stateDir).sort(), ["r1.jsonl"]);
 });
+
+test("[GRAPH-18] a task.created after the first line fails the read even with the seq of its line", () => {
+  const stateDir = temporaryDirectory();
+  const log = new EventLog(stateDir, PROFILE, V1);
+  const events = handLog("r1", "L", ["TASK_CLASSIFIED", "TASK_SENSE_COMPLETE", "DISCOVERY_COMPLETE", "FLOW_COMPLETE"]);
+  const created = events[0];
+  for (const again of [{ ...created }, { ...created, graph: buildGraph("S") }]) {
+    for (const position of [1, 3, 5]) {
+      const inserted = [...events.slice(0, position), again, ...events.slice(position)].map((event, index) => ({ ...event, seq: index + 1 }));
+      writeLog(stateDir, "r1", inserted);
+      expectStateError(() => log.events("r1"), "LOG_LINE_INVALID", `line ${position + 1}: ${JSON.stringify(again.graph).slice(0, 20)}`);
+      expectStateError(() => log.state("r1"), "LOG_LINE_INVALID", `line ${position + 1}: ${JSON.stringify(again.graph).slice(0, 20)}`);
+    }
+  }
+  writeLog(stateDir, "r1", events);
+  assert.equal(log.state("r1").state, "FLOW_COMPLETE");
+});
