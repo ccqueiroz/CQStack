@@ -1175,3 +1175,24 @@ test("[LOG-05] a line whose seq is not its line number or whose task_id is not t
   assert.equal(next.seq, 5);
   assert.deepEqual(log.events("r1").map((event) => event.seq), [1, 2, 3, 4, 5]);
 });
+
+test("[GRAPH-11] [ACTOR-05] a write request that is not an object is refused before the disk", () => {
+  const requests: unknown[] = [null, undefined, 5, "graph", true, 1n];
+  const missing = join(temporaryDirectory(), "state");
+  const fresh = new EventLog(missing, PROFILE, V1);
+  for (const request of requests) {
+    expectStateError(() => fresh.create("r1", request as never), "GRAPH_MISSING", `create ${String(request)}`);
+    expectStateError(() => fresh.transition("r1", request as never), "ACTOR_REQUIRED", `transition ${String(request)}`);
+    expectStateError(() => fresh.recordObservation("r1", request as never), "ACTOR_REQUIRED", `observation ${String(request)}`);
+  }
+  assert.equal(existsSync(missing), false);
+  const stateDir = temporaryDirectory();
+  const log = createdRoot(stateDir, "L");
+  const before = bytesOf(stateDir);
+  for (const request of requests) {
+    expectStateError(() => log.transition("r1", request as never), "ACTOR_REQUIRED", `transition ${String(request)}`);
+    expectStateError(() => log.recordObservation("r1", request as never), "ACTOR_REQUIRED", `observation ${String(request)}`);
+  }
+  assert.deepEqual(bytesOf(stateDir), before);
+  assert.equal(existsSync(join(stateDir, "r1.lock")), false);
+});

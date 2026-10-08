@@ -167,7 +167,8 @@ export class EventLog {
 
   create(rootId: string, request: { graph?: Graph | null; actor?: Actor | null }): Event {
     const { log, lock } = this.files(rootId);
-    const { graph, actor } = request;
+    // a request that is not an object has none of its fields, so it gets the code of the first missing one
+    const { graph, actor } = request ?? {};
     if (graph === undefined || graph === null)
       throw new StateError("GRAPH_MISSING", `Root has no graph recorded in task.created: ${rootId}`);
     const author = requireActor(actor);
@@ -190,7 +191,7 @@ export class EventLog {
     request: { to: RootState; expected_revision: number; graph_hash: string; actor?: Actor | null },
   ): Event {
     const { log, lock } = this.files(rootId);
-    const author = requireActor(request.actor);
+    const author = requireActor(request?.actor);
     assertNoSymlinks(log);
     // checked before the mutex, so a missing state directory never gets a lock file
     if (!existsSync(log)) throw new StateError("ROOT_NOT_FOUND", `Root has no event log: ${log}`);
@@ -218,7 +219,7 @@ export class EventLog {
 
   recordObservation(rootId: string, request: { actor?: Actor | null; observation: Observation; payload_ref: string }): Event {
     const { log, lock } = this.files(rootId);
-    const author = requireActor(request.actor);
+    const author = requireActor(request?.actor);
     const { observation } = request;
     if (observation?.root_id !== rootId)
       throw new StateError(
