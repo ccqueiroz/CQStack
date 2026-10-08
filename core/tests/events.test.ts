@@ -429,6 +429,26 @@ test("[GRAPH-17] a log with a recorded transition that leaves another state or i
   assert.equal(log.state("r1").state, "FLOW_COMPLETE");
 });
 
+test("[GRAPH-18] a log with task.created after the first line fails the read", () => {
+  const stateDir = temporaryDirectory();
+  const log = new EventLog(stateDir, PROFILE, V1);
+  const events = handLog("r1", "L", ["TASK_CLASSIFIED", "TASK_SENSE_COMPLETE", "DISCOVERY_COMPLETE", "FLOW_COMPLETE"]);
+  const created = events[0];
+  // with the graph_hash of the first one: the same graph again, and the S graph that would change the track
+  for (const again of [{ ...created }, { ...created, graph: buildGraph("S") }]) {
+    for (const position of [1, 3, 5]) {
+      writeLog(stateDir, "r1", [...events.slice(0, position), again, ...events.slice(position)]);
+      expectStateError(() => log.events("r1"), "LOG_LINE_INVALID", `line ${position + 1}: ${JSON.stringify(again.graph).slice(0, 20)}`);
+      expectStateError(() => log.state("r1"), "LOG_LINE_INVALID", `line ${position + 1}: ${JSON.stringify(again.graph).slice(0, 20)}`);
+    }
+  }
+  const otherHash = { ...created, graph: buildGraph("S"), graph_hash: canonicalHash(buildGraph("S")) };
+  writeLog(stateDir, "r1", [...events, otherHash]);
+  expectStateError(() => log.events("r1"), "GRAPH_MISMATCH", "another graph_hash");
+  writeLog(stateDir, "r1", events);
+  assert.equal(log.state("r1").state, "FLOW_COMPLETE");
+});
+
 test("[VER-03] events written by different harness versions are read", () => {
   const stateDir = temporaryDirectory();
   const third: HarnessVersion = { tag: "v0.0.1", commit: "a".repeat(64) };

@@ -312,6 +312,10 @@ export class EventLog {
     // the graph is checked against its own hash in the same event, not against other events (decision 38: no hash chain)
     if (canonicalHash(created.graph) !== created.graph_hash || events.some((event) => event.graph_hash !== created.graph_hash))
       throw new StateError("GRAPH_MISMATCH", `Graph differs from the one recorded in task.created: ${rootId}`);
+    // checked after the first event and the graph_hash of every event, so those two keep their own codes
+    const recreated = events.findIndex((event, index) => index > 0 && event.event_type === "task.created");
+    if (recreated !== -1)
+      throw new StateError("LOG_LINE_INVALID", `Event log line ${recreated + 1} is invalid: ${file}: task.created is only the first line`);
     return { events, view: deriveView(rootId, events) };
   }
 }
