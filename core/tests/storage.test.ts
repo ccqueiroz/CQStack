@@ -310,24 +310,35 @@ test("[LOG-01] [LOG-11] the state path is checked before the mutex, so a refused
   }
 });
 
-test("[LOG-01] [LOG-02] a state directory or a folder above it that is a file is refused before the log touches the disk", () => {
+test("[LOG-01] [LOG-02] creating where the state directory or a folder above it is a file is refused before the log touches the disk", () => {
+  const base = temporaryDirectory();
+  const plain = join(base, "plain");
+  writeFileSync(plain, "keep\n");
+  for (const stateDir of [plain, join(plain, "state")]) {
+    const log = new EventLog(stateDir, PROFILE, V1);
+    expectStateError(() => log.create("r1", { graph: buildGraph("L"), actor: ADA }), "STATE_DIR_INVALID", `create ${stateDir}`);
+  }
+  assert.equal(readFileSync(plain, "utf8"), "keep\n");
+  assert.deepEqual(readdirSync(base), ["plain"]);
+});
+
+test("[LOG-04] [LOG-07] where the state directory or a folder above it is a file there is no root to read or append to", () => {
   const base = temporaryDirectory();
   const plain = join(base, "plain");
   writeFileSync(plain, "keep\n");
   const graphHash = canonicalHash(buildGraph("L"));
   for (const stateDir of [plain, join(plain, "state")]) {
     const log = new EventLog(stateDir, PROFILE, V1);
-    expectStateError(() => log.create("r1", { graph: buildGraph("L"), actor: ADA }), "STATE_DIR_INVALID", `create ${stateDir}`);
-    expectStateError(() => log.events("r1"), "STATE_DIR_INVALID", `events ${stateDir}`);
-    expectStateError(() => log.state("r1"), "STATE_DIR_INVALID", `state ${stateDir}`);
+    expectStateError(() => log.events("r1"), "ROOT_NOT_FOUND", `events ${stateDir}`);
+    expectStateError(() => log.state("r1"), "ROOT_NOT_FOUND", `state ${stateDir}`);
     expectStateError(
       () => log.transition("r1", { to: "TASK_CLASSIFIED", expected_revision: 0, graph_hash: graphHash, actor: actorFor("TASK_RECEIVED", "TASK_CLASSIFIED") }),
-      "STATE_DIR_INVALID",
+      "ROOT_NOT_FOUND",
       `transition ${stateDir}`,
     );
     expectStateError(
       () => log.recordObservation("r1", { actor: WORKER, observation: observationOf({ root_id: "r1" }), payload_ref: "observations/one.json" }),
-      "STATE_DIR_INVALID",
+      "ROOT_NOT_FOUND",
       `observation ${stateDir}`,
     );
   }

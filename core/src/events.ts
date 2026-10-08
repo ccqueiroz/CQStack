@@ -206,7 +206,14 @@ export class EventLog {
     assertTrustedPath(log);
     // sealed before the folder exists: seq is always 1 and the seal reads no log, so its refusals leave no folder behind
     const event = this.seal(rootId, { seq: 1, event_type: "task.created", actor: author, graph: recorded, graph_hash: canonicalHash(recorded) });
-    mkdirSync(this.stateDir, { recursive: true, mode: 0o700 });
+    try {
+      mkdirSync(this.stateDir, { recursive: true, mode: 0o700 });
+    } catch (error) {
+      // recursive mkdir gives EEXIST when the state directory is a file and ENOTDIR when a folder above it is
+      if (["EEXIST", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? ""))
+        throw new StateError("STATE_DIR_INVALID", `State directory or a folder above it is not a folder: ${this.stateDir}`);
+      throw error;
+    }
     return withMutex(lock, () => {
       if (existsSync(log)) {
         this.read(rootId, log);
