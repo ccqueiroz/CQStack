@@ -1301,3 +1301,24 @@ test("[VER-01] [VER-02] [VER-04] each event keeps the harness version given to t
   assert.equal(existsSync(join(stateDir, "r2.jsonl")), false);
   assert.deepEqual(readdirSync(stateDir).sort(), ["r1.jsonl"]);
 });
+
+test("[ACTOR-08] a human write under a profile without commit_identity.email is refused", () => {
+  const stateDir = temporaryDirectory();
+  const seeded = createdRoot(stateDir, "L", L_PATH_TO_GAP);
+  const view = seeded.state("r1");
+  const before = bytesOf(stateDir);
+  const holdsItself: Record<string, unknown> = {};
+  holdsItself.self = holdsItself;
+  const profiles: unknown[] = [null, undefined, 5, "ada@example.com", 1n, {}, { commit_identity: null }, { commit_identity: {} }, holdsItself, [PROFILE]];
+  for (const profile of profiles) {
+    const log = new EventLog(stateDir, profile as ProjectProfile, V1);
+    expectStateError(() => log.create("r2", { graph: buildGraph("L"), actor: ADA }), "ACTOR_ID_INVALID", `create ${String(profile)}`);
+    expectStateError(
+      () => log.transition("r1", { to: "DECIDED", expected_revision: view.revision, graph_hash: view.graph_hash, actor: ADA }),
+      "ACTOR_ID_INVALID",
+      `decide ${String(profile)}`,
+    );
+  }
+  assert.deepEqual(bytesOf(stateDir), before);
+  assert.deepEqual(readdirSync(stateDir).sort(), ["r1.jsonl"]);
+});

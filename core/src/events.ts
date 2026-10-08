@@ -291,7 +291,7 @@ export class EventLog {
       throw new StateError("ACTOR_KIND_MISMATCH", `${fields.event_type} is written by kind ${expectedKind}, not ${String(actor.kind)}`);
     const idIsValid =
       expectedKind === "human"
-        ? actor.id === this.profile.commit_identity.email
+        ? actor.id === this.profile?.commit_identity?.email
         : expectedKind === "harness"
           ? actor.id === (this.harnessVersion.tag ?? this.harnessVersion.commit)
           : typeof actor.id === "string" && ID_PATTERN.test(actor.id);
