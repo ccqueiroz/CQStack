@@ -1,5 +1,6 @@
 import { Ajv } from "ajv";
 import { ROOT_STATES, TRACKS, type Graph, type RootState, type Track } from "./graph.js";
+import type { Observation } from "./observation.js";
 import type { ProjectProfile } from "./profile.js";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { isAbsolute, join, normalize } from "node:path";
@@ -205,6 +206,33 @@ export class EventLog {
         event_type: `transition.${view.state}.${request.to}`,
         actor: author,
         graph_hash: view.graph_hash,
+      });
+      appendLine(log, JSON.stringify(event));
+      return event;
+    });
+  }
+
+  recordObservation(rootId: string, request: { actor?: Actor | null; observation: Observation; payload_ref: string }): Event {
+    const { log, lock } = this.files(rootId);
+    const author = requireActor(request.actor);
+    const { observation } = request;
+    if (observation?.root_id !== rootId)
+      throw new StateError(
+        "OBSERVATION_ATTRIBUTION_INVALID",
+        "Observation needs the root_id of its root and, when given, a valid item_id",
+      );
+    assertNoSymlinks(log);
+    if (!existsSync(log)) throw new StateError("ROOT_NOT_FOUND", `Root has no event log: ${log}`);
+    return withMutex(lock, () => {
+      const { events } = this.read(rootId, log);
+      const event = this.seal(rootId, {
+        seq: events.length + 1,
+        event_type: "provider.observed",
+        actor: author,
+        graph_hash: events[0].graph_hash,
+        ...(observation.item_id === undefined ? {} : { item_id: observation.item_id }),
+        payload_ref: request.payload_ref,
+        payload_hash: canonicalHash(observation),
       });
       appendLine(log, JSON.stringify(event));
       return event;

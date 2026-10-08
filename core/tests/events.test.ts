@@ -18,6 +18,7 @@ import { StateError, canonicalHash, type StateErrorCode } from "../src/storage.j
 import { buildGraph, type RootState, type Track } from "../src/graph.js";
 import { EVENT_SCHEMA, EventLog, eventViolations, type Actor, type Event, type HarnessVersion } from "../src/events.js";
 import { PROFILE_FILE_NAME, loadProfile, type ProjectProfile } from "../src/profile.js";
+import { observeProcess, type Observation } from "../src/observation.js";
 
 const V1: HarnessVersion = { tag: "v9.9.9", commit: "1".repeat(40) };
 const V2: HarnessVersion = { tag: null, commit: "2".repeat(40) };
@@ -959,4 +960,112 @@ test("[PROOF-01] editing the ts or the actor role of earlier events breaks neith
     log.transition("r1", { to: "DISCOVERY_COMPLETE", expected_revision: view.revision, graph_hash: view.graph_hash, actor: actorFor(view.state, "DISCOVERY_COMPLETE") }).seq,
     4,
   );
+});
+
+const WORKER: Actor = { kind: "worker", id: "child-1", role: "implementer" };
+
+function observationOf(attribution: { root_id?: string; item_id?: string }): Observation {
+  return observeProcess(
+    attribution,
+    { command: "provider-cli", stdin: "prompt", timeout_ms: 1000 },
+    { exit_code: 0, stdout: "", stderr: "", signal: null },
+    3,
+  );
+}
+
+test("[ACTOR-11] [OBS-01] [OBS-02] [GRAPH-09] [LOG-03] a worker observation event records the child_task_id, the item, the payload and the root graph_hash", () => {
+  const stateDir = temporaryDirectory();
+  const log = createdRoot(stateDir, "L", ["TASK_CLASSIFIED"]);
+  const before = bytesOf(stateDir);
+  const observation = observationOf({ root_id: "r1", item_id: "item-1" });
+  const event = log.recordObservation("r1", { actor: WORKER, observation, payload_ref: "observations/r1-1.json" });
+  assert.equal(event.seq, 3);
+  assert.equal(event.event_type, "provider.observed");
+  assert.deepEqual(event.actor, WORKER);
+  assert.equal(event.item_id, "item-1");
+  assert.equal(event.payload_ref, "observations/r1-1.json");
+  assert.equal(event.payload_hash, canonicalHash(observation));
+  assert.equal(event.graph_hash, canonicalHash(buildGraph("L")));
+  assert.equal(event.task_id, "r1");
+  assert.deepEqual(event.harness_version, V1);
+  assert.deepEqual(bytesOf(stateDir).subarray(0, before.length), before);
+  assert.deepEqual(log.events("r1")[2], event);
+  assert.equal(log.state("r1").revision, 1);
+  const second = log.recordObservation("r1", { actor: WORKER, observation: observationOf({ root_id: "r1" }), payload_ref: "observations/r1-2.json" });
+  assert.equal("item_id" in second, false);
+  assert.equal("item_id" in log.events("r1")[3], false);
+});
+
+test("[ACTOR-11] [ACTOR-06] a worker id outside the task id format or a kind other than worker is refused", () => {
+  const stateDir = temporaryDirectory();
+  const log = createdRoot(stateDir, "L");
+  const before = bytesOf(stateDir);
+  const request = { observation: observationOf({ root_id: "r1" }), payload_ref: "observations/one.json" };
+  for (const id of ["Child-1", "", "a".repeat(65), 1, null, undefined]) {
+    const actor = { kind: "worker", id } as unknown as Actor;
+    expectStateError(() => log.recordObservation("r1", { ...request, actor }), "ACTOR_ID_INVALID", String(id));
+  }
+  for (const actor of [ADA, { kind: "harness", id: "v9.9.9" } as Actor]) {
+    expectStateError(() => log.recordObservation("r1", { ...request, actor }), "ACTOR_KIND_MISMATCH", actor.kind);
+  }
+  assert.deepEqual(bytesOf(stateDir), before);
+});
+
+test("[ACTOR-05] an observation without actor is refused, with no default author", () => {
+  const stateDir = temporaryDirectory();
+  const log = createdRoot(stateDir, "L");
+  const before = bytesOf(stateDir);
+  const request = { observation: observationOf({ root_id: "r1" }), payload_ref: "observations/one.json" };
+  expectStateError(() => log.recordObservation("r1", request), "ACTOR_REQUIRED", "absent");
+  expectStateError(() => log.recordObservation("r1", { ...request, actor: null }), "ACTOR_REQUIRED", "null");
+  assert.deepEqual(bytesOf(stateDir), before);
+});
+
+test("[OBS-01] [LOG-05] an observation of another root or an empty payload_ref is refused without writing", () => {
+  const stateDir = temporaryDirectory();
+  const log = createdRoot(stateDir, "L");
+  const before = bytesOf(stateDir);
+  expectStateError(
+    () => log.recordObservation("r1", { actor: WORKER, observation: observationOf({ root_id: "r2" }), payload_ref: "observations/one.json" }),
+    "OBSERVATION_ATTRIBUTION_INVALID",
+    "other root",
+  );
+  expectStateError(
+    () => log.recordObservation("r1", { actor: WORKER, observation: undefined as unknown as Observation, payload_ref: "observations/one.json" }),
+    "OBSERVATION_ATTRIBUTION_INVALID",
+    "absent",
+  );
+  expectStateError(
+    () => log.recordObservation("r1", { actor: WORKER, observation: observationOf({ root_id: "r1" }), payload_ref: "" }),
+    "EVENT_SCHEMA_VIOLATION",
+    "empty payload_ref",
+  );
+  assert.deepEqual(bytesOf(stateDir), before);
+});
+
+test("[LOG-07] [GRAPH-13] [LOCK-01] an observation on a missing, truncated or graphless log, or on a locked root, adds no byte", () => {
+  const graphHash = canonicalHash(buildGraph("L"));
+  const request = { actor: WORKER, observation: observationOf({ root_id: "r1" }), payload_ref: "observations/one.json" };
+  const missing = join(temporaryDirectory(), "state");
+  expectStateError(() => new EventLog(missing, PROFILE, V1).recordObservation("r1", request), "ROOT_NOT_FOUND");
+  assert.equal(existsSync(missing), false);
+  const stateDir = temporaryDirectory();
+  const log = new EventLog(stateDir, PROFILE, V1);
+  const [created] = handLog("r1", "L", []);
+  const cases: Array<[string, StateErrorCode]> = [
+    [JSON.stringify(created), "LOG_TRUNCATED"],
+    [JSON.stringify(observedLine("r1", 1, graphHash)) + "\n", "GRAPH_MISSING"],
+  ];
+  for (const [text, code] of cases) {
+    writeFileSync(join(stateDir, "r1.jsonl"), text);
+    expectStateError(() => log.recordObservation("r1", request), code);
+    assert.equal(readFileSync(join(stateDir, "r1.jsonl"), "utf8"), text);
+    assert.equal(existsSync(join(stateDir, "r1.lock")), false);
+  }
+  writeFileSync(join(stateDir, "r1.jsonl"), JSON.stringify(created) + "\n");
+  const lockText = JSON.stringify({ pid: process.pid, created_at: "2026-10-07T00:00:00.000Z" });
+  writeFileSync(join(stateDir, "r1.lock"), lockText);
+  expectStateError(() => log.recordObservation("r1", request), "ROOT_LOCKED");
+  assert.equal(readFileSync(join(stateDir, "r1.jsonl"), "utf8"), JSON.stringify(created) + "\n");
+  assert.equal(readFileSync(join(stateDir, "r1.lock"), "utf8"), lockText);
 });
