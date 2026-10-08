@@ -1,6 +1,9 @@
 import { Ajv } from "ajv";
 import { ROOT_STATES, TRACKS, type Graph, type RootState, type Track } from "./graph.js";
-import { ID_PATTERN } from "./storage.js";
+import type { ProjectProfile } from "./profile.js";
+import { readFileSync } from "node:fs";
+import { isAbsolute, join, normalize } from "node:path";
+import { ID_PATTERN, StateError, assertNoSymlinks, canonicalHash } from "./storage.js";
 
 export type ActorKind = "harness" | "human" | "worker";
 export interface Actor {
@@ -104,4 +107,89 @@ export function eventViolations(value: unknown): string[] {
     const field = error.params.additionalProperty;
     return `${error.instancePath || "/"} ${error.message}${field === undefined ? "" : ` (${field})`}`;
   });
+}
+
+const isEdge = (graph: Graph, from: string, to: string) => graph.edges.some((edge) => edge.from === from && edge.to === to);
+
+// The revision counts transitions only, so an observation between two transitions never makes it stale.
+function deriveView(rootId: string, events: Event[]): RootView {
+  const graph = events[0].graph!;
+  let state: RootState = "TASK_RECEIVED";
+  let revision = 0;
+  for (const event of events) {
+    if (!event.event_type.startsWith("transition.")) continue;
+    const [, from, to] = event.event_type.split(".");
+    if (from !== state || !isEdge(graph, from, to))
+      throw new StateError("TRANSITION_NOT_IN_GRAPH", `Recorded transition is not an edge of the recorded graph: ${from} -> ${to}`);
+    state = to as RootState;
+    revision += 1;
+  }
+  return { root_id: rootId, track: graph.track, state, revision, graph_hash: events[0].graph_hash };
+}
+
+export class EventLog {
+  private readonly stateDir: string;
+  private readonly profile: ProjectProfile;
+  private readonly harnessVersion: HarnessVersion;
+
+  constructor(stateDir: string | undefined, profile: ProjectProfile, harnessVersion: HarnessVersion) {
+    // normalized only: the disk resolves "link/.." through the link, while join() drops it as text
+    if (typeof stateDir !== "string" || stateDir.trim() === "" || !isAbsolute(stateDir) || normalize(stateDir) !== stateDir)
+      throw new StateError("STATE_DIR_INVALID", `State directory must be a non-empty, absolute, normalized path: ${String(stateDir)}`);
+    this.stateDir = stateDir;
+    this.profile = profile;
+    this.harnessVersion = harnessVersion;
+  }
+
+  events(rootId: string): Event[] {
+    return this.read(rootId, this.files(rootId).log).events;
+  }
+
+  state(rootId: string): RootView {
+    return this.read(rootId, this.files(rootId).log).view;
+  }
+
+  private files(rootId: unknown): { log: string } {
+    // typeof first: ID_PATTERN.test(undefined) would test the text "undefined"
+    if (typeof rootId !== "string" || !ID_PATTERN.test(rootId))
+      throw new StateError("ROOT_ID_INVALID", `Root id must match ${ID_PATTERN.source}: ${String(rootId)}`);
+    return { log: join(this.stateDir, `${rootId}.jsonl`) };
+  }
+
+  private read(rootId: string, file: string): { events: Event[]; view: RootView } {
+    assertNoSymlinks(file);
+    let text: string;
+    try {
+      text = readFileSync(file, "utf8");
+    } catch (error) {
+      if (["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? ""))
+        throw new StateError("ROOT_NOT_FOUND", `Root has no event log: ${file}`);
+      throw error;
+    }
+    if (!text.endsWith("\n")) throw new StateError("LOG_TRUNCATED", `Event log does not end with a newline: ${file}`);
+    const events = text
+      .slice(0, -1)
+      .split("\n")
+      .map((line, index) => {
+        const invalid = (reason: string) =>
+          new StateError("LOG_LINE_INVALID", `Event log line ${index + 1} is invalid: ${file}: ${reason}`);
+        let event: Event;
+        try {
+          event = JSON.parse(line);
+        } catch {
+          throw invalid("not JSON");
+        }
+        const violations = eventViolations(event);
+        if (violations.length > 0) throw invalid(violations.join("; "));
+        if (event.root_id !== rootId) throw invalid(`root_id ${event.root_id} is not ${rootId}`);
+        return event;
+      });
+    const created = events[0];
+    if (created.event_type !== "task.created" || created.graph === undefined)
+      throw new StateError("GRAPH_MISSING", `Root has no graph recorded in task.created: ${rootId}`);
+    // the graph is checked against its own hash in the same event, not against other events (decision 38: no hash chain)
+    if (canonicalHash(created.graph) !== created.graph_hash || events.some((event) => event.graph_hash !== created.graph_hash))
+      throw new StateError("GRAPH_MISMATCH", `Graph differs from the one recorded in task.created: ${rootId}`);
+    return { events, view: deriveView(rootId, events) };
+  }
 }

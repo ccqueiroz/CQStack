@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { lstatSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 
 export type StateErrorCode =
   | "STATE_DIR_INVALID"
@@ -50,4 +52,17 @@ export function canonical(value: unknown): string {
 
 export function canonicalHash(value: unknown): string {
   return createHash("sha256").update(canonical(value)).digest("hex");
+}
+
+export function assertNoSymlinks(path: string): void {
+  for (let current = resolve(path); ; current = dirname(current)) {
+    let isLink = false;
+    try {
+      isLink = lstatSync(current).isSymbolicLink();
+    } catch (error) {
+      if (!["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+    }
+    if (isLink) throw new StateError("SYMLINK_REJECTED", `Symbolic link in the state path: ${current}`);
+    if (dirname(current) === current) return;
+  }
 }
