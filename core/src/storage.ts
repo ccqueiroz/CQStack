@@ -21,6 +21,9 @@ export type StateErrorCode =
   | "OBSERVATION_ATTRIBUTION_INVALID"
   | "HARNESS_VERSION_UNAVAILABLE";
 
+// Ids become file names: lowercase only, so two ids never share a file on a case-insensitive disk.
+export const ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+
 export class StateError extends Error {
   readonly code: StateErrorCode;
 
