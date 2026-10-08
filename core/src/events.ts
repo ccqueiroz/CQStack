@@ -2,9 +2,9 @@ import { Ajv } from "ajv";
 import { ROOT_STATES, TRACKS, type Graph, type RootState, type Track } from "./graph.js";
 import type { Observation } from "./observation.js";
 import type { ProjectProfile } from "./profile.js";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { isAbsolute, join, normalize } from "node:path";
-import { ID_PATTERN, StateError, appendLine, assertNoSymlinks, canonicalHash, withMutex } from "./storage.js";
+import { ID_PATTERN, StateError, appendLine, assertNoSymlinks, canonicalHash, readText, withMutex } from "./storage.js";
 
 export type ActorKind = "harness" | "human" | "worker";
 export interface Actor {
@@ -337,7 +337,7 @@ export class EventLog {
     assertNoSymlinks(file);
     let text: string;
     try {
-      text = readFileSync(file, "utf8");
+      text = readText(file);
     } catch (error) {
       if (["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? ""))
         throw new StateError("ROOT_NOT_FOUND", `Root has no event log: ${file}`);

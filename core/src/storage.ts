@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { appendFileSync, closeSync, fsyncSync, lstatSync, openSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, constants, fsyncSync, lstatSync, openSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
 export type StateErrorCode =
@@ -68,8 +68,29 @@ export function assertNoSymlinks(path: string): void {
   }
 }
 
+// O_NOFOLLOW makes the open itself refuse a link put in place of the file after assertNoSymlinks looked (0 where the system has
+// none); the link error is ELOOP, or EMLINK on FreeBSD.
+function openNoFollow(file: string, flags: number, mode?: number): number {
+  try {
+    return openSync(file, flags | (constants.O_NOFOLLOW ?? 0), mode);
+  } catch (error) {
+    if (["ELOOP", "EMLINK"].includes((error as NodeJS.ErrnoException).code ?? ""))
+      throw new StateError("SYMLINK_REJECTED", `Symbolic link in the state path: ${file}`);
+    throw error;
+  }
+}
+
+export function readText(file: string): string {
+  const descriptor = openNoFollow(file, constants.O_RDONLY);
+  try {
+    return readFileSync(descriptor, "utf8");
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
 export function appendLine(file: string, line: string): void {
-  const descriptor = openSync(file, "a", 0o600);
+  const descriptor = openNoFollow(file, constants.O_WRONLY | constants.O_APPEND | constants.O_CREAT, 0o600);
   try {
     appendFileSync(descriptor, line + "\n");
     fsyncSync(descriptor);

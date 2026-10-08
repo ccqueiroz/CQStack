@@ -14,7 +14,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { StateError, canonicalHash, type StateErrorCode } from "../src/storage.js";
+import { StateError, appendLine, canonicalHash, readText, type StateErrorCode } from "../src/storage.js";
 import { buildGraph, type RootState, type Track } from "../src/graph.js";
 import { EVENT_SCHEMA, EventLog, eventViolations, type Actor, type Event, type HarnessVersion } from "../src/events.js";
 import { PROFILE_FILE_NAME, loadProfile, type ProjectProfile } from "../src/profile.js";
@@ -1434,4 +1434,22 @@ test("[GRAPH-08] [OBS-01] [OBS-02] the graph hash and the payload hash are taken
   assert.equal(event.item_id, "item-9");
   assert.equal(event.payload_hash, canonicalHash(carried));
   assert.deepEqual(log.events("r1"), [created, event]);
+});
+
+test("[LOG-11] a link put in place of the log file after the path check is refused by the open itself, without reading or writing through it", () => {
+  const base = temporaryDirectory();
+  const outside = join(base, "outside.jsonl");
+  writeFileSync(outside, "keep\n");
+  const stateDir = join(base, "state");
+  mkdirSync(stateDir);
+  const swapped = join(stateDir, "r1.jsonl");
+  symlinkSync(outside, swapped);
+  const dangling = join(stateDir, "r2.jsonl");
+  symlinkSync(join(base, "created-through-link.jsonl"), dangling);
+  for (const link of [swapped, dangling]) {
+    expectStateError(() => appendLine(link, "{}"), "SYMLINK_REJECTED", `append ${link}`);
+    expectStateError(() => readText(link), "SYMLINK_REJECTED", `read ${link}`);
+  }
+  assert.equal(readFileSync(outside, "utf8"), "keep\n");
+  assert.equal(existsSync(join(base, "created-through-link.jsonl")), false);
 });
