@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { StateError } from "../src/storage.js";
-import { observeProcess, type ProcessOutcome } from "../src/observation.js";
+import { observeProcess, type ObservedRequest, type ProcessOutcome } from "../src/observation.js";
 
 // Secret samples and their prefixes are built at runtime, so no source line looks like a credential.
 const VALUE = ["v4l0", "U_e-9"].join(".");
@@ -163,13 +163,58 @@ test("[OBS-04] [OBS-05] only error messages and command executions are taken fro
     '{"type":"item.completed","item":{"type":"file_change","command":"cmd-1"}}',
     '{"type":"item.started","item":{"type":"command_execution","command":"cmd-2"}}',
     '{"type":"item.completed","item":{"type":"command_execution"}}',
+    ...[[`token=${VALUE}`], ["curl", "-H", `token: ${VALUE}`], { argv: `token=${VALUE}` }, 5, null].map((command) =>
+      JSON.stringify({ type: "item.completed", item: { type: "command_execution", command } }),
+    ),
     '{"type":"error","message":"e1"}',
     '{"is_error":true,"result":"r2"}',
     '{"type":"item.completed","item":{"type":"command_execution","command":"cmd-3"}}',
   ].join("\n");
   const observation = observeProcess({ root_id: "root-a" }, REQUEST, outcome({ stdout }), 1);
   assert.deepEqual(observation.errors, ["e1", "r2"]);
-  assert.deepEqual(observation.tool_calls, ["", "cmd-3"]);
+  assert.deepEqual(observation.tool_calls, ["cmd-3"]);
   const serialized = JSON.stringify(observation);
-  for (const marker of ["m1", "r1", "cmd-1", "cmd-2"]) assert.ok(!serialized.includes(marker), marker);
+  for (const marker of ["m1", "r1", "cmd-1", "cmd-2", VALUE]) assert.ok(!serialized.includes(marker), marker);
+});
+
+test("[OBS-07] a process request or outcome with a field of another type is refused", () => {
+  const secretBytes = new TextEncoder().encode(`token=${VALUE}`);
+  const requests = [
+    null,
+    undefined,
+    { ...REQUEST, command: ["provider-cli", "--api-key", VALUE] },
+    { ...REQUEST, command: undefined },
+    { ...REQUEST, stdin: secretBytes },
+    { ...REQUEST, stdin: null },
+    { ...REQUEST, timeout_ms: "1000" },
+    { ...REQUEST, timeout_ms: { raw: VALUE } },
+    ...[NaN, Infinity, -Infinity].map((timeout_ms) => ({ ...REQUEST, timeout_ms })),
+  ];
+  const outcomes = [
+    null,
+    { ...outcome({}), stdout: Buffer.from("x") },
+    { ...outcome({}), stderr: secretBytes },
+    { ...outcome({}), stderr: [`token=${VALUE}`] },
+    { ...outcome({}), exit_code: "0" },
+    { ...outcome({}), exit_code: undefined },
+    ...[NaN, Infinity, -Infinity].map((exit_code) => ({ ...outcome({}), exit_code })),
+    { ...outcome({}), signal: { raw: VALUE } },
+    { ...outcome({}), signal: undefined },
+  ];
+  const cases: Array<[unknown, unknown, unknown]> = [
+    ...requests.map((request): [unknown, unknown, unknown] => [request, outcome({}), 1]),
+    ...outcomes.map((result): [unknown, unknown, unknown] => [REQUEST, result, 1]),
+    [REQUEST, outcome({}), "12"],
+    [REQUEST, outcome({}), undefined],
+    ...[NaN, Infinity, -Infinity].map((elapsedMs): [unknown, unknown, unknown] => [REQUEST, outcome({}), elapsedMs]),
+  ];
+  cases.forEach(([request, result, elapsedMs], index) => {
+    assert.throws(
+      () => observeProcess({ root_id: "r1" }, request as ObservedRequest, result as ProcessOutcome, elapsedMs as number),
+      (error: unknown) => error instanceof StateError && error.code === "OBSERVATION_INPUT_INVALID",
+      `case ${index + 1}`,
+    );
+  });
+  const accepted = observeProcess({ root_id: "r1" }, REQUEST, outcome({ exit_code: null, signal: "SIGTERM" }), 2.5);
+  assert.deepEqual([accepted.exit_code, accepted.signal, accepted.elapsed_ms], [null, "SIGTERM", 2.5]);
 });

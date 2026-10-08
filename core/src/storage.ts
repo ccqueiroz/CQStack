@@ -21,6 +21,7 @@ export type StateErrorCode =
   | "ACTOR_ID_INVALID"
   | "EVENT_SCHEMA_VIOLATION"
   | "OBSERVATION_ATTRIBUTION_INVALID"
+  | "OBSERVATION_INPUT_INVALID"
   | "HARNESS_VERSION_UNAVAILABLE";
 
 // Ids become file names: lowercase only, so two ids never share a file on a case-insensitive disk.

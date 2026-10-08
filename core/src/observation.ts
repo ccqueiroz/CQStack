@@ -57,6 +57,16 @@ export function observeProcess(
       "OBSERVATION_ATTRIBUTION_INVALID",
       "Observation needs the root_id of its root and, when given, a valid item_id",
     );
+  const isText = (value: unknown) => typeof value === "string";
+  // finite only: NaN and the infinities serialize as null, and an infinite exit_code would read as the legitimate null
+  const isNumber = (value: unknown) => Number.isFinite(value);
+  // caller values are written, hashed or redacted as they come: another type would skip the redaction or the record's shape
+  if (
+    !isText(request?.command) || !isText(request.stdin) || !isNumber(request.timeout_ms) || !isNumber(elapsedMs) ||
+    !isText(result?.stdout) || !isText(result.stderr) || !(isNumber(result.exit_code) || result.exit_code === null) ||
+    !(isText(result.signal) || result.signal === null)
+  )
+    throw new StateError("OBSERVATION_INPUT_INVALID", "Observation needs a process request and outcome with the documented field types");
   const errors: string[] = [];
   const tool_calls: string[] = [];
   for (const line of result.stdout.split("\n")) {
@@ -64,7 +74,8 @@ export function observeProcess(
       const value = JSON.parse(line);
       if (value.type === "error" && typeof value.message === "string") errors.push(redact(value.message));
       if (value.is_error && typeof value.result === "string") errors.push(redact(value.result));
-      if (value.type === "item.completed" && value.item?.type === "command_execution") tool_calls.push(redact(value.item.command ?? ""));
+      if (value.type === "item.completed" && value.item?.type === "command_execution" && typeof value.item.command === "string")
+        tool_calls.push(redact(value.item.command));
     } catch {
       // a line that is not a JSON object keeps only its share of the stdout byte count and hash
     }
