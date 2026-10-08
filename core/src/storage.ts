@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { appendFileSync, closeSync, constants, fsyncSync, lstatSync, openSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, constants, fsyncSync, lstatSync, openSync, readFileSync, unlinkSync, writeFileSync, type Stats } from "node:fs";
 import { dirname, resolve } from "node:path";
 
 export type StateErrorCode =
@@ -72,20 +72,37 @@ export function asWritten(value: unknown): unknown {
   }
 }
 
-export function assertNoSymlinks(path: string): void {
+// After this walk no other user can change the path (as OpenSSH StrictModes): no component is a symbolic link, and every folder
+// belongs to the user or root and is not writable by group or others. A folder others may write passes only with the sticky bit
+// (others cannot rename or remove a name that is not theirs) and only when the next component down is an existing folder: others
+// can still create a missing name there, and the names in the state directory itself are its log and lock files.
+// Without process.getuid (Windows) only the link check runs.
+export function assertTrustedPath(path: string): void {
+  const uid = typeof process.getuid === "function" ? process.getuid() : undefined;
+  let below: Stats | undefined;
   for (let current = resolve(path); ; current = dirname(current)) {
-    let isLink = false;
+    let stats: Stats | undefined;
     try {
-      isLink = lstatSync(current).isSymbolicLink();
+      stats = lstatSync(current);
     } catch (error) {
       if (!["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
     }
-    if (isLink) throw new StateError("SYMLINK_REJECTED", `Symbolic link in the state path: ${current}`);
+    if (stats?.isSymbolicLink()) throw new StateError("SYMLINK_REJECTED", `Symbolic link in the state path: ${current}`);
+    if (stats?.isDirectory() && uid !== undefined) {
+      const othersMayWrite = (stats.mode & 0o022) !== 0;
+      const stickyProtects = (stats.mode & 0o1000) !== 0 && below?.isDirectory() === true;
+      if ((stats.uid !== uid && stats.uid !== 0) || (othersMayWrite && !stickyProtects))
+        throw new StateError(
+          "STATE_DIR_INVALID",
+          `Folder in the state path must belong to the user or root and not be writable by group or others: ${current}`,
+        );
+    }
+    below = stats;
     if (dirname(current) === current) return;
   }
 }
 
-// O_NOFOLLOW makes the open itself refuse a link put in place of the file after assertNoSymlinks looked (0 where the system has
+// O_NOFOLLOW makes the open itself refuse a link put in place of the file after assertTrustedPath looked (0 where the system has
 // none); the link error is ELOOP, or EMLINK on FreeBSD.
 function openNoFollow(file: string, flags: number, mode?: number): number {
   try {

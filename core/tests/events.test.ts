@@ -1,6 +1,7 @@
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -1545,4 +1546,92 @@ test("[GRAPH-16] [GRAPH-17] [LOG-08] each transition field is read from the call
   assert.deepEqual(reads, { to: 1, expected_revision: 1, graph_hash: 1 });
   assert.deepEqual(log.events("r1").slice(1), [moved]);
   assert.deepEqual(log.state("r1"), { ...view, state: "TASK_CLASSIFIED", revision: 1 });
+});
+
+// a root written while its folders were private, then a folder above it opened to others: every operation is refused, nothing changes
+function assertStatePathRefused(stateDir: string, label: string): void {
+  const before = bytesOf(stateDir);
+  const names = readdirSync(stateDir).sort();
+  const log = new EventLog(stateDir, PROFILE, V1);
+  const graphHash = canonicalHash(buildGraph("L"));
+  expectStateError(() => log.events("r1"), "STATE_DIR_INVALID", `events ${label}`);
+  expectStateError(() => log.state("r1"), "STATE_DIR_INVALID", `state ${label}`);
+  expectStateError(
+    () => log.transition("r1", { to: "TASK_CLASSIFIED", expected_revision: 0, graph_hash: graphHash, actor: { kind: "harness", id: "v9.9.9" } }),
+    "STATE_DIR_INVALID",
+    `transition ${label}`,
+  );
+  expectStateError(
+    () => log.recordObservation("r1", { actor: WORKER, observation: observationOf({ root_id: "r1" }), payload_ref: "observations/one.json" }),
+    "STATE_DIR_INVALID",
+    `observation ${label}`,
+  );
+  expectStateError(() => log.create("r2", { graph: buildGraph("L"), actor: ADA }), "STATE_DIR_INVALID", `create ${label}`);
+  assert.deepEqual(bytesOf(stateDir), before);
+  assert.deepEqual(readdirSync(stateDir).sort(), names);
+}
+
+test("[LOG-01] [LOG-11] a folder in the state path that group or others may write is refused before the log touches the disk", () => {
+  const base = temporaryDirectory();
+  for (const mode of [0o775, 0o757]) {
+    const open = join(base, `open-${mode.toString(8)}`);
+    mkdirSync(open);
+    const stateDir = join(open, "state");
+    createdRoot(stateDir, "L");
+    chmodSync(open, mode);
+    assertStatePathRefused(stateDir, `ancestor ${mode.toString(8)}`);
+    expectStateError(() => new EventLog(join(open, "fresh"), PROFILE, V1).create("r1", { graph: buildGraph("L"), actor: ADA }), "STATE_DIR_INVALID", `fresh ${mode.toString(8)}`);
+    assert.deepEqual(readdirSync(open), ["state"]);
+    chmodSync(open, 0o700);
+    chmodSync(stateDir, mode);
+    assertStatePathRefused(stateDir, `state directory ${mode.toString(8)}`);
+  }
+});
+
+test("[LOG-01] [LOG-11] a sticky folder others may write is accepted above the state directory only when the next folder down already exists", () => {
+  const base = temporaryDirectory();
+  const sticky = join(base, "sticky");
+  mkdirSync(sticky);
+  chmodSync(sticky, 0o1777);
+  const own = join(sticky, "own");
+  mkdirSync(own, { mode: 0o700 });
+  const stateDir = join(own, "state");
+  const log = createdRoot(stateDir, "L", ["TASK_CLASSIFIED"]);
+  log.recordObservation("r1", { actor: WORKER, observation: observationOf({ root_id: "r1" }), payload_ref: "observations/one.json" });
+  assert.deepEqual(
+    log.events("r1").map((event) => event.event_type),
+    ["task.created", "transition.TASK_RECEIVED.TASK_CLASSIFIED", "provider.observed"],
+  );
+  assert.equal(new EventLog(stateDir, PROFILE, V1).state("r1").state, "TASK_CLASSIFIED");
+  // a state directory not created yet right under the sticky folder: another user could create that name first
+  expectStateError(() => new EventLog(join(sticky, "state"), PROFILE, V1).create("r1", { graph: buildGraph("L"), actor: ADA }), "STATE_DIR_INVALID", "missing under sticky");
+  assert.deepEqual(readdirSync(sticky), ["own"]);
+  // the sticky folder as the state directory: another user could put a log or a lock in it
+  writeLog(sticky, "r1", handLog("r1", "L", []));
+  assertStatePathRefused(sticky, "sticky state directory");
+});
+
+test("[LOG-01] [LOG-11] a folder of another user in the state path is refused; without process.getuid (Windows) only the link check runs", () => {
+  const base = temporaryDirectory();
+  const stateDir = join(base, "state");
+  createdRoot(stateDir, "L");
+  const wide = join(base, "wide");
+  mkdirSync(wide);
+  const wideState = join(wide, "state");
+  createdRoot(wideState, "L");
+  chmodSync(wide, 0o777);
+  const getuid = process.getuid;
+  let withoutGetuid: unknown[] = [];
+  try {
+    // the folders of this user now belong to "another user"; the folders of root above them still pass
+    process.getuid = () => 4242;
+    assertStatePathRefused(stateDir, "another owner");
+    process.getuid = undefined;
+    withoutGetuid = new EventLog(wideState, PROFILE, V1).events("r1");
+  } finally {
+    process.getuid = getuid;
+  }
+  assert.equal(withoutGetuid.length, 1);
+  assert.equal(new EventLog(stateDir, PROFILE, V1).events("r1").length, 1);
+  assertStatePathRefused(wideState, "with process.getuid");
 });

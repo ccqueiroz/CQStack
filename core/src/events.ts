@@ -4,7 +4,7 @@ import type { Observation } from "./observation.js";
 import type { ProjectProfile } from "./profile.js";
 import { existsSync, mkdirSync } from "node:fs";
 import { isAbsolute, join, normalize } from "node:path";
-import { ID_PATTERN, StateError, appendLine, asWritten, assertNoSymlinks, canonicalHash, readText, withMutex } from "./storage.js";
+import { ID_PATTERN, StateError, appendLine, asWritten, assertTrustedPath, canonicalHash, readText, withMutex } from "./storage.js";
 
 export type ActorKind = "harness" | "human" | "worker";
 export interface Actor {
@@ -203,7 +203,7 @@ export class EventLog {
     const author = requireActor(actor);
     const recorded = asWritten(graph) as Graph;
     if (!validateGraph(recorded)) throw new StateError("EVENT_SCHEMA_VIOLATION", `Graph does not match the schema of task.created: ${rootId}`);
-    assertNoSymlinks(log);
+    assertTrustedPath(log);
     mkdirSync(this.stateDir, { recursive: true, mode: 0o700 });
     return withMutex(lock, () => {
       if (existsSync(log)) {
@@ -224,7 +224,7 @@ export class EventLog {
     const author = requireActor(request?.actor);
     // read once: a getter could pass the edge check with one target and write another
     const { to, expected_revision, graph_hash } = request;
-    assertNoSymlinks(log);
+    assertTrustedPath(log);
     // checked before the mutex, so a missing state directory never gets a lock file
     if (!existsSync(log)) throw new StateError("ROOT_NOT_FOUND", `Root has no event log: ${log}`);
     return withMutex(lock, () => {
@@ -264,7 +264,7 @@ export class EventLog {
       );
     if (!validateObservation(written))
       throw new StateError("OBSERVATION_INPUT_INVALID", "Observation needs a process request and outcome with the documented field types");
-    assertNoSymlinks(log);
+    assertTrustedPath(log);
     if (!existsSync(log)) throw new StateError("ROOT_NOT_FOUND", `Root has no event log: ${log}`);
     return withMutex(lock, () => {
       const { events } = this.read(rootId, log);
@@ -320,7 +320,7 @@ export class EventLog {
   }
 
   private read(rootId: string, file: string): { events: Event[]; view: RootView } {
-    assertNoSymlinks(file);
+    assertTrustedPath(file);
     let text: string;
     try {
       text = readText(file);
