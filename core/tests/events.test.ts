@@ -4,9 +4,11 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   readdirSync,
   realpathSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -14,7 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { StateError, canonicalHash, type StateErrorCode } from "../src/storage.js";
 import { buildGraph, type RootState, type Track } from "../src/graph.js";
-import { EVENT_SCHEMA, EventLog, eventViolations, type HarnessVersion } from "../src/events.js";
+import { EVENT_SCHEMA, EventLog, eventViolations, type Actor, type HarnessVersion } from "../src/events.js";
 import { PROFILE_FILE_NAME, loadProfile, type ProjectProfile } from "../src/profile.js";
 
 const V1: HarnessVersion = { tag: "v9.9.9", commit: "1".repeat(40) };
@@ -500,4 +502,183 @@ test("[LOG-01] reading uses only the state directory it received", () => {
     assert.equal(log.state("r1").track, "S");
     expectStateError(() => log.events("r9"), "ROOT_NOT_FOUND");
   });
+});
+
+const ADA: Actor = { kind: "human", id: "ada@example.com" };
+
+test("[GRAPH-08] [ACTOR-07] [ACTOR-08] [VER-01] creating a root writes task.created with the graph, its canonical hash, the human author and the harness version", () => {
+  const stateDir = join(temporaryDirectory(), "nested", "state");
+  const log = new EventLog(stateDir, PROFILE, V1);
+  const graph = buildGraph("M", ["prototype"]);
+  const actor: Actor = { kind: "human", id: "ada@example.com", role: "requester" };
+  const event = log.create("r1", { graph, actor });
+  assert.equal(event.seq, 1);
+  assert.equal(event.root_id, "r1");
+  assert.equal(event.task_id, "r1");
+  assert.equal(event.event_type, "task.created");
+  assert.deepEqual(event.actor, actor);
+  assert.deepEqual(event.graph, graph);
+  assert.equal(event.graph_hash, canonicalHash(graph));
+  assert.deepEqual(event.harness_version, V1);
+  assert.equal(typeof event.ts, "string");
+  assert.notEqual(event.ts, "");
+  const file = join(stateDir, "r1.jsonl");
+  assert.equal(existsSync(file), true);
+  assert.deepEqual(log.events("r1"), [event]);
+  assert.equal(readFileSync(file, "utf8"), JSON.stringify(event) + "\n");
+});
+
+test("[GRAPH-11] creating without a graph is refused with GRAPH_MISSING and no file", () => {
+  const stateDir = temporaryDirectory();
+  const log = new EventLog(stateDir, PROFILE, V1);
+  expectStateError(() => log.create("r1", { actor: ADA }), "GRAPH_MISSING", "absent");
+  expectStateError(() => log.create("r1", { graph: null, actor: ADA }), "GRAPH_MISSING", "null");
+  assert.deepEqual(readdirSync(stateDir), []);
+});
+
+test("[ACTOR-05] creating without an actor is refused, with no default author", () => {
+  const stateDir = temporaryDirectory();
+  const log = new EventLog(stateDir, PROFILE, V1);
+  const graph = buildGraph("L");
+  expectStateError(() => log.create("r1", { graph }), "ACTOR_REQUIRED", "absent");
+  expectStateError(() => log.create("r1", { graph, actor: null }), "ACTOR_REQUIRED", "null");
+  expectStateError(() => log.create("r1", { graph, actor: "human" as unknown as Actor }), "ACTOR_REQUIRED", "text");
+  assert.deepEqual(readdirSync(stateDir), []);
+});
+
+test("[ACTOR-06] [ACTOR-07] a caller kind other than human is refused for task.created", () => {
+  const stateDir = temporaryDirectory();
+  const log = new EventLog(stateDir, PROFILE, V1);
+  const graph = buildGraph("L");
+  const actors = [
+    { kind: "worker", id: "ada@example.com" },
+    { kind: "harness", id: "ada@example.com" },
+    { kind: "admin", id: "ada@example.com" },
+    { id: "ada@example.com" },
+  ];
+  for (const actor of actors) {
+    expectStateError(() => log.create("r1", { graph, actor: actor as Actor }), "ACTOR_KIND_MISMATCH", JSON.stringify(actor));
+  }
+  assert.equal(existsSync(join(stateDir, "r1.jsonl")), false);
+  assert.equal(existsSync(join(stateDir, "r1.lock")), false);
+});
+
+test("[ACTOR-08] a human id other than the profile email is refused", () => {
+  const stateDir = temporaryDirectory();
+  const log = new EventLog(stateDir, PROFILE, V1);
+  for (const id of ["eve@example.com", "ADA@example.com", ""]) {
+    expectStateError(() => log.create("r1", { graph: buildGraph("L"), actor: { kind: "human", id } }), "ACTOR_ID_INVALID", id);
+  }
+  assert.equal(existsSync(join(stateDir, "r1.jsonl")), false);
+});
+
+test("[TRACK-01] creating a root that already has task.created is refused and the file stays byte for byte", () => {
+  const stateDir = temporaryDirectory();
+  const log = new EventLog(stateDir, PROFILE, V1);
+  log.create("r1", { graph: buildGraph("S"), actor: ADA });
+  const file = join(stateDir, "r1.jsonl");
+  assert.equal(existsSync(file), true);
+  const before = readFileSync(file);
+  expectStateError(() => log.create("r1", { graph: buildGraph("L"), actor: ADA }), "ROOT_EXISTS");
+  assert.deepEqual(readFileSync(file), before);
+  assert.equal(log.state("r1").track, "S");
+});
+
+test("[LOG-07] [GRAPH-13] creating on a truncated log or on one without graph fails and adds no byte", () => {
+  const stateDir = temporaryDirectory();
+  const log = new EventLog(stateDir, PROFILE, V1);
+  const [created] = handLog("r1", "L", []);
+  const cases: Array<[string, StateErrorCode]> = [
+    ["", "LOG_TRUNCATED"],
+    [JSON.stringify(created), "LOG_TRUNCATED"],
+    [JSON.stringify(observedLine("r1", 1, created.graph_hash as string)) + "\n", "GRAPH_MISSING"],
+  ];
+  for (const [text, code] of cases) {
+    const file = join(stateDir, "r1.jsonl");
+    writeFileSync(file, text);
+    expectStateError(() => log.create("r1", { graph: buildGraph("L"), actor: ADA }), code, JSON.stringify(text.slice(0, 20)));
+    assert.equal(readFileSync(file, "utf8"), text);
+    assert.equal(existsSync(join(stateDir, "r1.lock")), false);
+  }
+});
+
+test("[LOG-12] the log creates the state directory with 0700 and the root file with 0600", () => {
+  const stateDir = join(temporaryDirectory(), "a", "b", "state");
+  new EventLog(stateDir, PROFILE, V1).create("r1", { graph: buildGraph("L"), actor: ADA });
+  const file = join(stateDir, "r1.jsonl");
+  assert.equal(existsSync(stateDir), true);
+  assert.equal(existsSync(file), true);
+  assert.equal(statSync(stateDir).mode & 0o777, 0o700);
+  assert.equal(statSync(file).mode & 0o777, 0o600);
+});
+
+test("[LOG-11] creating under a symbolic link is refused without writing", () => {
+  const base = temporaryDirectory();
+  const realState = join(base, "real-state");
+  mkdirSync(realState);
+  const linkedState = join(base, "linked-state");
+  symlinkSync(realState, linkedState);
+  const realParent = join(base, "real-parent");
+  mkdirSync(realParent);
+  const linkedParent = join(base, "linked-parent");
+  symlinkSync(realParent, linkedParent);
+  for (const stateDir of [linkedState, join(linkedParent, "state")]) {
+    const log = new EventLog(stateDir, PROFILE, V1);
+    expectStateError(() => log.create("r1", { graph: buildGraph("L"), actor: ADA }), "SYMLINK_REJECTED", stateDir);
+  }
+  assert.deepEqual(readdirSync(realState), []);
+  assert.deepEqual(readdirSync(realParent), []);
+});
+
+test("[LOCK-01] [LOCK-02] a create while the root mutex exists is refused and changes neither the log nor the mutex", () => {
+  const stateDir = temporaryDirectory();
+  const log = new EventLog(stateDir, PROFILE, V1);
+  const lockText = JSON.stringify({ pid: process.pid, created_at: "2026-10-07T00:00:00.000Z" });
+  writeFileSync(join(stateDir, "r1.lock"), lockText);
+  expectStateError(() => log.create("r1", { graph: buildGraph("L"), actor: ADA }), "ROOT_LOCKED", "r1");
+  assert.equal(existsSync(join(stateDir, "r1.jsonl")), false);
+  assert.equal(readFileSync(join(stateDir, "r1.lock"), "utf8"), lockText);
+  log.create("r2", { graph: buildGraph("L"), actor: ADA });
+  const file = join(stateDir, "r2.jsonl");
+  assert.equal(existsSync(file), true);
+  const before = readFileSync(file);
+  writeFileSync(join(stateDir, "r2.lock"), lockText);
+  expectStateError(() => log.create("r2", { graph: buildGraph("S"), actor: ADA }), "ROOT_LOCKED", "r2");
+  assert.deepEqual(readFileSync(file), before);
+  assert.equal(readFileSync(join(stateDir, "r2.lock"), "utf8"), lockText);
+});
+
+test("[LOCK-03] the mutex is removed after a create that succeeds and after one that fails inside it", () => {
+  const stateDir = temporaryDirectory();
+  const log = new EventLog(stateDir, PROFILE, V1);
+  log.create("r1", { graph: buildGraph("L"), actor: ADA });
+  assert.equal(existsSync(join(stateDir, "r1.jsonl")), true);
+  assert.equal(existsSync(join(stateDir, "r1.lock")), false);
+  expectStateError(() => log.create("r1", { graph: buildGraph("L"), actor: ADA }), "ROOT_EXISTS", "second");
+  assert.equal(existsSync(join(stateDir, "r1.lock")), false);
+  expectStateError(() => log.create("r1", { graph: buildGraph("L"), actor: ADA }), "ROOT_EXISTS", "third");
+});
+
+test("[LOG-01] [LOG-03] creating writes only under the state directory, as one JSON line at the end", () => {
+  const decoy = temporaryDirectory();
+  const stateDir = temporaryDirectory();
+  withCwd(decoy, () => new EventLog(stateDir, PROFILE, V1).create("r1", { graph: buildGraph("L"), actor: ADA }));
+  const file = join(stateDir, "r1.jsonl");
+  assert.equal(existsSync(file), true);
+  assert.deepEqual(readdirSync(decoy), []);
+  assert.deepEqual(readdirSync(stateDir), ["r1.jsonl"]);
+  const text = readFileSync(file, "utf8");
+  assert.ok(text.endsWith("\n"));
+  assert.equal(text.split("\n").length, 2);
+});
+
+test("[VER-02] a malformed harness version stops every create", () => {
+  const stateDir = temporaryDirectory();
+  const versions = [{ tag: "", commit: "1".repeat(40) }, { tag: null, commit: "x" }, { commit: "1".repeat(40) }];
+  for (const version of versions) {
+    const log = new EventLog(stateDir, PROFILE, version as HarnessVersion);
+    expectStateError(() => log.create("r1", { graph: buildGraph("L"), actor: ADA }), "EVENT_SCHEMA_VIOLATION", JSON.stringify(version));
+  }
+  assert.equal(existsSync(join(stateDir, "r1.jsonl")), false);
+  assert.equal(existsSync(join(stateDir, "r1.lock")), false);
 });

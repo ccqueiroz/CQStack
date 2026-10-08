@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { lstatSync } from "node:fs";
+import { appendFileSync, closeSync, fsyncSync, lstatSync, openSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
 export type StateErrorCode =
@@ -64,5 +64,33 @@ export function assertNoSymlinks(path: string): void {
     }
     if (isLink) throw new StateError("SYMLINK_REJECTED", `Symbolic link in the state path: ${current}`);
     if (dirname(current) === current) return;
+  }
+}
+
+export function appendLine(file: string, line: string): void {
+  const descriptor = openSync(file, "a", 0o600);
+  try {
+    appendFileSync(descriptor, line + "\n");
+    fsyncSync(descriptor);
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
+export function withMutex<T>(lockFile: string, run: () => T): T {
+  let descriptor: number;
+  try {
+    descriptor = openSync(lockFile, "wx", 0o600);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST")
+      throw new StateError("ROOT_LOCKED", `Root is locked by another write: ${lockFile}`);
+    throw error;
+  }
+  try {
+    writeFileSync(descriptor, JSON.stringify({ pid: process.pid, created_at: new Date().toISOString() }));
+    return run();
+  } finally {
+    closeSync(descriptor);
+    unlinkSync(lockFile);
   }
 }

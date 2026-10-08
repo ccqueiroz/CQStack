@@ -1,9 +1,9 @@
 import { Ajv } from "ajv";
 import { ROOT_STATES, TRACKS, type Graph, type RootState, type Track } from "./graph.js";
 import type { ProjectProfile } from "./profile.js";
-import { readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { isAbsolute, join, normalize } from "node:path";
-import { ID_PATTERN, StateError, assertNoSymlinks, canonicalHash } from "./storage.js";
+import { ID_PATTERN, StateError, appendLine, assertNoSymlinks, canonicalHash, withMutex } from "./storage.js";
 
 export type ActorKind = "harness" | "human" | "worker";
 export interface Actor {
@@ -109,6 +109,26 @@ export function eventViolations(value: unknown): string[] {
   });
 }
 
+const HUMAN_TARGETS: readonly string[] = ["DECIDED", "PLAN_APPROVED", "LOTE_MERGED"];
+const ID_RULES: Record<ActorKind, string> = {
+  human: "the profile commit_identity.email",
+  harness: "the harness tag, or the commit outside a tag",
+  worker: `a task id matching ${ID_PATTERN.source}`,
+};
+
+function kindOf(eventType: string): ActorKind {
+  if (eventType === "task.created") return "human";
+  if (eventType === "provider.observed") return "worker";
+  const [, from, to] = eventType.split(".");
+  return HUMAN_TARGETS.includes(to) || from === "NEEDS_HUMAN" ? "human" : "harness";
+}
+
+function requireActor(actor: Actor | null | undefined): Actor {
+  if (typeof actor !== "object" || actor === null)
+    throw new StateError("ACTOR_REQUIRED", "Every event needs an actor {kind, id, role?}; there is no default.");
+  return actor;
+}
+
 const isEdge = (graph: Graph, from: string, to: string) => graph.edges.some((edge) => edge.from === from && edge.to === to);
 
 // The revision counts transitions only, so an observation between two transitions never makes it stale.
@@ -141,6 +161,25 @@ export class EventLog {
     this.harnessVersion = harnessVersion;
   }
 
+  create(rootId: string, request: { graph?: Graph | null; actor?: Actor | null }): Event {
+    const { log, lock } = this.files(rootId);
+    const { graph, actor } = request;
+    if (graph === undefined || graph === null)
+      throw new StateError("GRAPH_MISSING", `Root has no graph recorded in task.created: ${rootId}`);
+    const author = requireActor(actor);
+    assertNoSymlinks(log);
+    mkdirSync(this.stateDir, { recursive: true, mode: 0o700 });
+    return withMutex(lock, () => {
+      if (existsSync(log)) {
+        this.read(rootId, log);
+        throw new StateError("ROOT_EXISTS", `Root already has task.created: ${log}`);
+      }
+      const event = this.seal(rootId, { seq: 1, event_type: "task.created", actor: author, graph, graph_hash: canonicalHash(graph) });
+      appendLine(log, JSON.stringify(event));
+      return event;
+    });
+  }
+
   events(rootId: string): Event[] {
     return this.read(rootId, this.files(rootId).log).events;
   }
@@ -149,11 +188,31 @@ export class EventLog {
     return this.read(rootId, this.files(rootId).log).view;
   }
 
-  private files(rootId: unknown): { log: string } {
+  // The kind comes from the event type, in code (decision 43); a different caller kind is refused, never rewritten.
+  private seal(rootId: string, fields: Omit<Event, "ts" | "root_id" | "task_id" | "harness_version">): Event {
+    const expectedKind = kindOf(fields.event_type);
+    const { actor } = fields;
+    if (actor.kind !== expectedKind)
+      throw new StateError("ACTOR_KIND_MISMATCH", `${fields.event_type} is written by kind ${expectedKind}, not ${String(actor.kind)}`);
+    const idIsValid =
+      expectedKind === "human"
+        ? actor.id === this.profile.commit_identity.email
+        : expectedKind === "harness"
+          ? actor.id === (this.harnessVersion.tag ?? this.harnessVersion.commit)
+          : typeof actor.id === "string" && ID_PATTERN.test(actor.id);
+    if (!idIsValid) throw new StateError("ACTOR_ID_INVALID", `Actor id for kind ${expectedKind} must be ${ID_RULES[expectedKind]}: ${String(actor.id)}`);
+    const { seq, event_type, ...rest } = fields;
+    const event = { seq, ts: new Date().toISOString(), root_id: rootId, task_id: rootId, event_type, ...rest, harness_version: this.harnessVersion };
+    const violations = eventViolations(event);
+    if (violations.length > 0) throw new StateError("EVENT_SCHEMA_VIOLATION", `Event does not match the schema: ${violations.join("; ")}`);
+    return event;
+  }
+
+  private files(rootId: unknown): { log: string; lock: string } {
     // typeof first: ID_PATTERN.test(undefined) would test the text "undefined"
     if (typeof rootId !== "string" || !ID_PATTERN.test(rootId))
       throw new StateError("ROOT_ID_INVALID", `Root id must match ${ID_PATTERN.source}: ${String(rootId)}`);
-    return { log: join(this.stateDir, `${rootId}.jsonl`) };
+    return { log: join(this.stateDir, `${rootId}.jsonl`), lock: join(this.stateDir, `${rootId}.lock`) };
   }
 
   private read(rootId: string, file: string): { events: Event[]; view: RootView } {
