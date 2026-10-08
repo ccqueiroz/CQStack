@@ -1519,3 +1519,30 @@ test("[VER-01] [ACTOR-10] the version is converted from its own fields, so a toJ
   assert.deepEqual(moved.harness_version, V1);
   assert.deepEqual(log.events("r1"), [created, moved]);
 });
+
+test("[GRAPH-16] [GRAPH-17] [LOG-08] each transition field is read from the caller once, so the edge checked is the edge written", () => {
+  const stateDir = temporaryDirectory();
+  const log = createdRoot(stateDir, "L");
+  const view = log.state("r1");
+  const reads = { to: 0, expected_revision: 0, graph_hash: 0 };
+  // the target is an edge on the first read and a state off the graph on every later read
+  const request = {
+    actor: { kind: "harness" as const, id: "v9.9.9" },
+    get to(): RootState {
+      return ++reads.to === 1 ? "TASK_CLASSIFIED" : "TASK_SENSE_COMPLETE";
+    },
+    get expected_revision() {
+      reads.expected_revision += 1;
+      return view.revision;
+    },
+    get graph_hash() {
+      reads.graph_hash += 1;
+      return view.graph_hash;
+    },
+  };
+  const moved = log.transition("r1", request);
+  assert.equal(moved.event_type, "transition.TASK_RECEIVED.TASK_CLASSIFIED");
+  assert.deepEqual(reads, { to: 1, expected_revision: 1, graph_hash: 1 });
+  assert.deepEqual(log.events("r1").slice(1), [moved]);
+  assert.deepEqual(log.state("r1"), { ...view, state: "TASK_CLASSIFIED", revision: 1 });
+});
