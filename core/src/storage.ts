@@ -137,6 +137,18 @@ export function appendLine(file: string, line: string): void {
   }
 }
 
+// fsync(2) of a new file does not keep its name in the folder after a power loss; the folder needs its own fsync.
+// Skipped on Windows: FlushFileBuffers needs a handle with write access, which a folder opened read-only does not have.
+export function syncFolder(folder: string): void {
+  if (process.platform === "win32") return;
+  const descriptor = openSync(folder, constants.O_RDONLY);
+  try {
+    fsyncSync(descriptor);
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
 export function withMutex<T>(lockFile: string, run: () => T): T {
   let descriptor: number;
   try {

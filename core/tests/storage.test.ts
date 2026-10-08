@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import fs, { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
 import { appendLine, canonicalHash, readText, type StateErrorCode } from "../src/storage.js";
 import { buildGraph } from "../src/graph.js";
@@ -331,4 +332,31 @@ test("[LOG-01] [LOG-02] a state directory or a folder above it that is a file is
   }
   assert.equal(readFileSync(plain, "utf8"), "keep\n");
   assert.deepEqual(readdirSync(base), ["plain"]);
+});
+
+test("[LOG-12] creating a root syncs the new log file and then the state folder; a later write syncs only the file", () => {
+  const stateDir = temporaryDirectory();
+  const synced: Array<{ ino: number; folder: boolean }> = [];
+  const fsyncSync = fs.fsyncSync;
+  // the log imports fsyncSync from node:fs; syncBuiltinESMExports makes that binding see the recording wrapper
+  fs.fsyncSync = (descriptor: number) => {
+    const stats = fs.fstatSync(descriptor);
+    synced.push({ ino: stats.ino, folder: stats.isDirectory() });
+    fsyncSync(descriptor);
+  };
+  syncBuiltinESMExports();
+  let onCreate: typeof synced = [];
+  try {
+    const log = createdRoot(stateDir, "L");
+    onCreate = synced.splice(0);
+    log.transition("r1", { to: "TASK_CLASSIFIED", expected_revision: 0, graph_hash: canonicalHash(buildGraph("L")), actor: actorFor("TASK_RECEIVED", "TASK_CLASSIFIED") });
+  } finally {
+    fs.fsyncSync = fsyncSync;
+    syncBuiltinESMExports();
+  }
+  const file = join(stateDir, "r1.jsonl");
+  assert.equal(existsSync(file), true);
+  assert.deepEqual(onCreate, [{ ino: statSync(file).ino, folder: false }, { ino: statSync(stateDir).ino, folder: true }]);
+  assert.deepEqual(synced, [{ ino: statSync(file).ino, folder: false }]);
+  assert.equal(readFileSync(file, "utf8").split("\n").length, 3);
 });

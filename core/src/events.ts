@@ -4,7 +4,7 @@ import type { Observation } from "./observation.js";
 import type { ProjectProfile } from "./profile.js";
 import { existsSync, mkdirSync } from "node:fs";
 import { isAbsolute, join, normalize } from "node:path";
-import { ID_PATTERN, StateError, appendLine, asWritten, assertTrustedPath, canonicalHash, readText, withMutex } from "./storage.js";
+import { ID_PATTERN, StateError, appendLine, asWritten, assertTrustedPath, canonicalHash, readText, syncFolder, withMutex } from "./storage.js";
 
 export type ActorKind = "harness" | "human" | "worker";
 export interface Actor {
@@ -213,6 +213,8 @@ export class EventLog {
         throw new StateError("ROOT_EXISTS", `Root already has task.created: ${log}`);
       }
       appendLine(log, JSON.stringify(event));
+      // ponytail: folders mkdirSync made above the state folder are not synced; sync them if a first create must survive a power loss
+      syncFolder(this.stateDir);
       return event;
     });
   }
