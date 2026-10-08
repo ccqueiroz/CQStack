@@ -144,9 +144,10 @@ test("[OBS-05] every secret form is replaced whole by [REDACTED] in stderr, erro
   assert.deepEqual({ swept, wrong: wrong.slice(0, 3), count: wrong.length }, { swept: 840, wrong: [], count: 0 });
 });
 
-test("[OBS-05] stderr is cut to 8000 characters after redaction", () => {
+test("[OBS-05] stderr is cut to 8000 characters before redaction, so the marker stays whole", () => {
   const cut = (stderr: string) => observeProcess({ root_id: "r1" }, REQUEST, outcome({ stderr }), 1).stderr;
-  assert.equal(cut("a".repeat(7990) + " token=" + VALUE), "a".repeat(7990) + " token[RED");
+  assert.equal(cut("a".repeat(7990) + " token=" + VALUE), "a".repeat(7990) + " token[REDACTED]");
+  assert.equal(cut("e".repeat(7998) + "token=" + VALUE), "e".repeat(7998) + "to");
   assert.equal(cut("b".repeat(8001)), "b".repeat(8000));
   assert.equal(cut("c".repeat(7999)), "c".repeat(7999));
   assert.equal(cut("d".repeat(8000)), "d".repeat(8000));

@@ -94,8 +94,8 @@ export function observeProcess(
     stdout_hash: digest(result.stdout),
     stderr_bytes: Buffer.byteLength(result.stderr),
     stderr_hash: digest(result.stderr),
-    // redact before cutting, so the cut never leaves half a secret out of reach of the patterns
-    stderr: redact(result.stderr).slice(0, 8000),
+    // cut before redacting, so the marker is never cut; a key the cut splits had its value past the cut, which is dropped
+    stderr: redact(result.stderr.slice(0, 8000)),
     errors,
     tool_calls,
   };
