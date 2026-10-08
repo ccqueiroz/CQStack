@@ -160,6 +160,23 @@ function requireActor(actor: Actor | null | undefined): Actor {
   return actor;
 }
 
+// The value as its JSON line carries it, or undefined when it has none: a bigint, a cycle, a toJSON that throws or gives undefined
+// (JSON.parse of undefined throws), or a value JSON would turn into null or drop (a number that is not finite, a function, a symbol),
+// so NaN never becomes the legitimate null. Checks read this copy: an inherited field or a toJSON cannot pass them and then change the line.
+function asWritten(value: unknown): unknown {
+  try {
+    return JSON.parse(
+      JSON.stringify(value, (_key, item: unknown) => {
+        if ((typeof item === "number" && !Number.isFinite(item)) || typeof item === "function" || typeof item === "symbol")
+          throw new TypeError("no JSON text");
+        return item;
+      }),
+    );
+  } catch {
+    return undefined;
+  }
+}
+
 const isEdge = (graph: Graph, from: string, to: string) => graph.edges.some((edge) => edge.from === from && edge.to === to);
 
 // The revision counts transitions only, so an observation between two transitions never makes it stale.
@@ -200,7 +217,8 @@ export class EventLog {
     if (graph === undefined || graph === null)
       throw new StateError("GRAPH_MISSING", `Root has no graph recorded in task.created: ${rootId}`);
     const author = requireActor(actor);
-    if (!validateGraph(graph)) throw new StateError("EVENT_SCHEMA_VIOLATION", `Graph does not match the schema of task.created: ${rootId}`);
+    const recorded = asWritten(graph) as Graph;
+    if (!validateGraph(recorded)) throw new StateError("EVENT_SCHEMA_VIOLATION", `Graph does not match the schema of task.created: ${rootId}`);
     assertNoSymlinks(log);
     mkdirSync(this.stateDir, { recursive: true, mode: 0o700 });
     return withMutex(lock, () => {
@@ -208,7 +226,7 @@ export class EventLog {
         this.read(rootId, log);
         throw new StateError("ROOT_EXISTS", `Root already has task.created: ${log}`);
       }
-      const event = this.seal(rootId, { seq: 1, event_type: "task.created", actor: author, graph, graph_hash: canonicalHash(graph) });
+      const event = this.seal(rootId, { seq: 1, event_type: "task.created", actor: author, graph: recorded, graph_hash: canonicalHash(recorded) });
       appendLine(log, JSON.stringify(event));
       return event;
     });
@@ -248,14 +266,17 @@ export class EventLog {
   recordObservation(rootId: string, request: { actor?: Actor | null; observation: Observation; payload_ref: string }): Event {
     const { log, lock } = this.files(rootId);
     const author = requireActor(request?.actor);
-    const { observation } = request;
+    const given = request.observation;
+    const written = asWritten(given) as Observation | undefined;
+    // with no JSON text the attribution is read as given, so a malformed item_id keeps its code
+    const observation = written === undefined ? given : written;
     const itemId = observation?.item_id;
     if (observation?.root_id !== rootId || (itemId !== undefined && !(typeof itemId === "string" && ID_PATTERN.test(itemId))))
       throw new StateError(
         "OBSERVATION_ATTRIBUTION_INVALID",
         "Observation needs the root_id of its root and, when given, a valid item_id",
       );
-    if (!validateObservation(observation))
+    if (!validateObservation(written))
       throw new StateError("OBSERVATION_INPUT_INVALID", "Observation needs a process request and outcome with the documented field types");
     assertNoSymlinks(log);
     if (!existsSync(log)) throw new StateError("ROOT_NOT_FOUND", `Root has no event log: ${log}`);
@@ -286,7 +307,11 @@ export class EventLog {
   // The kind comes from the event type, in code (decision 43); a different caller kind is refused, never rewritten.
   private seal(rootId: string, fields: Omit<Event, "ts" | "root_id" | "task_id" | "harness_version">): Event {
     const expectedKind = kindOf(fields.event_type);
-    const { actor } = fields;
+    const { seq, event_type, ...rest } = fields;
+    const event = { seq, ts: new Date().toISOString(), root_id: rootId, task_id: rootId, event_type, ...rest, harness_version: { ...this.harnessVersion } };
+    const written = asWritten(event) as Event | undefined;
+    // with no JSON text nothing is written, so the actor is checked as given and keeps the code of its field
+    const actor = requireActor((written ?? event).actor);
     if (actor.kind !== expectedKind)
       throw new StateError("ACTOR_KIND_MISMATCH", `${fields.event_type} is written by kind ${expectedKind}, not ${String(actor.kind)}`);
     const idIsValid =
@@ -296,11 +321,9 @@ export class EventLog {
           ? actor.id === (this.harnessVersion.tag ?? this.harnessVersion.commit)
           : typeof actor.id === "string" && ID_PATTERN.test(actor.id);
     if (!idIsValid) throw new StateError("ACTOR_ID_INVALID", `Actor id for kind ${expectedKind} must be ${ID_RULES[expectedKind]}: ${String(actor.id)}`);
-    const { seq, event_type, ...rest } = fields;
-    const event = { seq, ts: new Date().toISOString(), root_id: rootId, task_id: rootId, event_type, ...rest, harness_version: { ...this.harnessVersion } };
-    const violations = eventViolations(event);
+    const violations = eventViolations(written);
     if (violations.length > 0) throw new StateError("EVENT_SCHEMA_VIOLATION", `Event does not match the schema: ${violations.join("; ")}`);
-    return event;
+    return written as Event;
   }
 
   private files(rootId: unknown): { log: string; lock: string } {

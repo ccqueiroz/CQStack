@@ -1339,3 +1339,99 @@ test("[GRAPH-18] a task.created after the first line fails the read even with th
   writeLog(stateDir, "r1", events);
   assert.equal(log.state("r1").state, "FLOW_COMPLETE");
 });
+
+// values whose JSON is not what a check of the value reads: fields only on the prototype, or a toJSON that JSON.stringify calls
+function inheriting<T extends object>(fields: T): T {
+  return Object.create(fields) as T;
+}
+
+function withToJson<T extends object>(value: T, json: unknown, enumerable = false): T {
+  return Object.defineProperty({ ...value }, "toJSON", { value: () => json, enumerable }) as T;
+}
+
+test("[ACTOR-05] [ACTOR-06] [ACTOR-08] [ACTOR-11] [GRAPH-08] [OBS-01] [OBS-07] each write checks the event as its JSON line carries it, so an inherited field or a toJSON is refused and the root stays readable and writable", () => {
+  const stateDir = temporaryDirectory();
+  const log = createdRoot(stateDir, "L", L_PATH_TO_GAP);
+  const view = log.state("r1");
+  const before = bytesOf(stateDir);
+  const holdsItself: Record<string, unknown> = {};
+  holdsItself.self = holdsItself;
+  const humanActors: Array<[unknown, StateErrorCode]> = [
+    [inheriting(ADA), "ACTOR_KIND_MISMATCH"],
+    [withToJson(ADA, { kind: "human", id: "eve@example.com" }), "ACTOR_ID_INVALID"],
+    [withToJson(ADA, { kind: "human", id: "eve@example.com" }, true), "ACTOR_ID_INVALID"],
+    [withToJson(ADA, { kind: "worker", id: "child-1" }), "ACTOR_KIND_MISMATCH"],
+    [withToJson(ADA, null), "ACTOR_REQUIRED"],
+    [withToJson(ADA, "human"), "ACTOR_REQUIRED"],
+    [withToJson(ADA, undefined), "ACTOR_REQUIRED"],
+    [{ ...ADA, role: holdsItself }, "EVENT_SCHEMA_VIOLATION"],
+    [{ ...ADA, role: Symbol("lead") }, "EVENT_SCHEMA_VIOLATION"],
+  ];
+  humanActors.forEach(([actor, code], index) => {
+    expectStateError(() => log.create("r2", { graph: buildGraph("L"), actor: actor as Actor }), code, `create actor ${index}`);
+    expectStateError(
+      () => log.transition("r1", { to: "DECIDED", expected_revision: view.revision, graph_hash: view.graph_hash, actor: actor as Actor }),
+      code,
+      `decide actor ${index}`,
+    );
+  });
+  const graphL = buildGraph("L");
+  const graphs = [
+    inheriting(graphL),
+    withToJson(graphL, { ...graphL, stages: ["Bad Stage"] }),
+    withToJson(graphL, undefined),
+    { ...graphL, stages: Object.defineProperty(["design"], "toJSON", { value: () => "ab" }) },
+    { ...graphL, extra: () => graphL },
+  ];
+  graphs.forEach((graph, index) => {
+    expectStateError(() => log.create("r2", { graph, actor: ADA }), "EVENT_SCHEMA_VIOLATION", `graph ${index}`);
+  });
+  const observation = observationOf({ root_id: "r1", item_id: "item-1" });
+  const workerActors: Array<[unknown, StateErrorCode]> = [
+    [inheriting(WORKER), "ACTOR_KIND_MISMATCH"],
+    [withToJson(WORKER, { kind: "worker", id: "Child-1" }), "ACTOR_ID_INVALID"],
+    [withToJson(WORKER, null), "ACTOR_REQUIRED"],
+    [{ kind: "worker", id: 1n }, "ACTOR_ID_INVALID"],
+    [{ ...WORKER, role: holdsItself }, "EVENT_SCHEMA_VIOLATION"],
+  ];
+  workerActors.forEach(([actor, code], index) => {
+    expectStateError(() => log.recordObservation("r1", { actor: actor as Actor, observation, payload_ref: "observations/one.json" }), code, `worker ${index}`);
+  });
+  const observations: Array<[Observation, StateErrorCode]> = [
+    [inheriting(observation), "OBSERVATION_ATTRIBUTION_INVALID"],
+    [withToJson(observation, { ...observation, root_id: "r2" }), "OBSERVATION_ATTRIBUTION_INVALID"],
+    [withToJson(observation, { ...observation, item_id: "Item" }), "OBSERVATION_ATTRIBUTION_INVALID"],
+    [withToJson(observation, { ...observation, stderr: 1 }), "OBSERVATION_INPUT_INVALID"],
+    [withToJson(observation, undefined), "OBSERVATION_INPUT_INVALID"],
+    [{ ...observation, item_id: (() => "item-1") as unknown as string }, "OBSERVATION_ATTRIBUTION_INVALID"],
+    [{ ...observation, signal: NaN as unknown as string }, "OBSERVATION_INPUT_INVALID"],
+  ];
+  observations.forEach(([given, code], index) => {
+    expectStateError(() => log.recordObservation("r1", { actor: WORKER, observation: given, payload_ref: "observations/one.json" }), code, `observation ${index}`);
+  });
+  const notFinite = new EventLog(stateDir, PROFILE, { tag: NaN as unknown as string, commit: "1".repeat(40) });
+  expectStateError(() => notFinite.create("r2", { graph: buildGraph("L"), actor: ADA }), "EVENT_SCHEMA_VIOLATION", "tag NaN");
+  assert.deepEqual(bytesOf(stateDir), before);
+  assert.deepEqual(readdirSync(stateDir).sort(), ["r1.jsonl"]);
+  assert.deepEqual(log.state("r1"), view);
+  log.transition("r1", { to: "DECIDED", expected_revision: view.revision, graph_hash: view.graph_hash, actor: ADA });
+  log.recordObservation("r1", { actor: WORKER, observation, payload_ref: "observations/one.json" });
+  assert.deepEqual(log.events("r1").slice(-2).map((event) => event.event_type), ["transition.GAP_DEFINED.DECIDED", "provider.observed"]);
+  assert.equal(log.state("r1").state, "DECIDED");
+});
+
+test("[GRAPH-08] [OBS-01] [OBS-02] the graph hash and the payload hash are taken from the JSON a write carries, and the line read back is that JSON", () => {
+  const stateDir = temporaryDirectory();
+  const log = new EventLog(stateDir, PROFILE, V1);
+  const graphS = buildGraph("S");
+  const created = log.create("r1", { graph: withToJson(buildGraph("L"), graphS), actor: ADA });
+  assert.deepEqual(created.graph, graphS);
+  assert.equal(created.graph_hash, canonicalHash(graphS));
+  assert.deepEqual(log.state("r1"), { root_id: "r1", track: "S", state: "TASK_RECEIVED", revision: 0, graph_hash: canonicalHash(graphS) });
+  const observation = observationOf({ root_id: "r1", item_id: "item-1" });
+  const carried = { ...observation, item_id: "item-9", stderr: "carried" };
+  const event = log.recordObservation("r1", { actor: WORKER, observation: withToJson(observation, carried), payload_ref: "observations/one.json" });
+  assert.equal(event.item_id, "item-9");
+  assert.equal(event.payload_hash, canonicalHash(carried));
+  assert.deepEqual(log.events("r1"), [created, event]);
+});
