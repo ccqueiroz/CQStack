@@ -1089,3 +1089,26 @@ test("[LOG-07] [GRAPH-13] [LOCK-01] an observation on a missing, truncated or gr
   assert.equal(readFileSync(join(stateDir, "r1.jsonl"), "utf8"), JSON.stringify(created) + "\n");
   assert.equal(readFileSync(join(stateDir, "r1.lock"), "utf8"), lockText);
 });
+
+test("[LOG-10] a root id outside the id format is refused by every write without creating the state directory", () => {
+  const stateDir = join(temporaryDirectory(), "state");
+  const log = new EventLog(stateDir, PROFILE, V1);
+  const graph = buildGraph("L");
+  const observation = observationOf({ root_id: "r1" });
+  const invalid = [undefined, "", "A", "aB", "-a", "_a", "a.b", "a/b", "..", "a b", "\u00e9", "a".repeat(65)];
+  for (const rootId of invalid) {
+    const label = String(rootId);
+    expectStateError(() => log.create(rootId as string, { graph, actor: ADA }), "ROOT_ID_INVALID", `create ${label}`);
+    expectStateError(
+      () => log.transition(rootId as string, { to: "TASK_CLASSIFIED", expected_revision: 0, graph_hash: canonicalHash(graph), actor: actorFor("TASK_RECEIVED", "TASK_CLASSIFIED") }),
+      "ROOT_ID_INVALID",
+      `transition ${label}`,
+    );
+    expectStateError(
+      () => log.recordObservation(rootId as string, { actor: WORKER, observation, payload_ref: "observations/one.json" }),
+      "ROOT_ID_INVALID",
+      `observation ${label}`,
+    );
+  }
+  assert.equal(existsSync(stateDir), false);
+});
