@@ -1,11 +1,11 @@
-import test, { after } from "node:test";
+import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { lstatSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { temporaryDirectory } from "./helpers.js";
 
 const REPOSITORY_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const FORBIDDEN_TERMS: ReadonlyArray<readonly [length: number, sha256: string]> =
@@ -75,14 +75,8 @@ function findViolations(
   return violations;
 }
 
-const temporaryDirectories: string[] = [];
-after(() => {
-  for (const directory of temporaryDirectories) rmSync(directory, { recursive: true, force: true });
-});
-
 function directoryWithFiles(files: Record<string, string>): string {
-  const directory = mkdtempSync(join(tmpdir(), "cqstack-guard-"));
-  temporaryDirectories.push(directory);
+  const directory = temporaryDirectory();
   for (const [path, content] of Object.entries(files)) {
     mkdirSync(dirname(join(directory, path)), { recursive: true });
     writeFileSync(join(directory, path), content);

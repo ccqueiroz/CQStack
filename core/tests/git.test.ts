@@ -1,16 +1,11 @@
-import test, { after } from "node:test";
+import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { StateError } from "../src/storage.js";
 import { readHarnessVersion } from "../src/git.js";
-
-const temporaryDirectories: string[] = [];
-after(() => {
-  for (const directory of temporaryDirectories) rmSync(directory, { recursive: true, force: true });
-});
+import { temporaryDirectory } from "./helpers.js";
 
 // Only PATH and fixed -c options: the user's git configuration never signs, prompts or prints hints here.
 function git(cwd: string, ...args: string[]): string {
@@ -26,12 +21,6 @@ function git(cwd: string, ...args: string[]): string {
     ],
     { cwd, env: { PATH: process.env.PATH ?? "" }, stdio: "pipe", encoding: "utf8" },
   );
-}
-
-function temporaryDirectory(): string {
-  const directory = realpathSync(mkdtempSync(join(tmpdir(), "cqstack-git-")));
-  temporaryDirectories.push(directory);
-  return directory;
 }
 
 function repository(): string {

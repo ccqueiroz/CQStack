@@ -1,9 +1,9 @@
-import test, { after } from "node:test";
+import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PROFILE_FILE_NAME, ProfileError, loadProfile, type ProfileErrorCode } from "../src/profile.js";
+import { temporaryDirectory } from "./helpers.js";
 
 const VALID_PROFILE = {
   project_id: "acme-toy",
@@ -14,17 +14,6 @@ const VALID_PROFILE = {
   knowledge_store: { deliveries_dir: "deliveries", remote: "git@example.com:acme/store.git" },
   state_dir: "state",
 };
-
-const temporaryDirectories: string[] = [];
-after(() => {
-  for (const directory of temporaryDirectories) rmSync(directory, { recursive: true, force: true });
-});
-
-function temporaryDirectory(): string {
-  const directory = mkdtempSync(join(tmpdir(), "cqstack-profile-"));
-  temporaryDirectories.push(directory);
-  return directory;
-}
 
 function projectRootWithText(text: string): string {
   const projectRoot = temporaryDirectory();
