@@ -1508,3 +1508,14 @@ test("[ACTOR-10] [VER-01] [VER-02] the harness actor id is checked against the v
   assert.deepEqual(bytesOf(stateDir), before);
   assert.deepEqual(readdirSync(stateDir).sort(), ["r1.jsonl"]);
 });
+
+test("[VER-01] [ACTOR-10] the version is converted from its own fields, so a toJSON the copy does not carry is not read", () => {
+  const stateDir = temporaryDirectory();
+  const version = Object.defineProperty({ ...V1 }, "toJSON", { value: () => ({ tag: "v1.0.0", commit: V1.commit }) });
+  const log = new EventLog(stateDir, PROFILE, version);
+  const created = log.create("r1", { graph: buildGraph("L"), actor: ADA });
+  assert.deepEqual(created.harness_version, V1);
+  const moved = log.transition("r1", { to: "TASK_CLASSIFIED", expected_revision: 0, graph_hash: created.graph_hash, actor: { kind: "harness", id: "v9.9.9" } });
+  assert.deepEqual(moved.harness_version, V1);
+  assert.deepEqual(log.events("r1"), [created, moved]);
+});
