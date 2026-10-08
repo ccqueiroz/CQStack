@@ -55,6 +55,23 @@ export function canonicalHash(value: unknown): string {
   return createHash("sha256").update(canonical(value)).digest("hex");
 }
 
+// The value as its JSON line carries it, or undefined when it has none: a bigint, a cycle, a toJSON that throws or gives undefined
+// (JSON.parse of undefined throws), or a value JSON would turn into null or drop (a number that is not finite, a function, a symbol),
+// so NaN never becomes the legitimate null. Checks read this copy: an inherited field or a toJSON cannot pass them and then change the line.
+export function asWritten(value: unknown): unknown {
+  try {
+    return JSON.parse(
+      JSON.stringify(value, (_key, item: unknown) => {
+        if ((typeof item === "number" && !Number.isFinite(item)) || typeof item === "function" || typeof item === "symbol")
+          throw new TypeError("no JSON text");
+        return item;
+      }),
+    );
+  } catch {
+    return undefined;
+  }
+}
+
 export function assertNoSymlinks(path: string): void {
   for (let current = resolve(path); ; current = dirname(current)) {
     let isLink = false;

@@ -219,3 +219,50 @@ test("[OBS-07] a process request or outcome with a field of another type is refu
   const accepted = observeProcess({ root_id: "r1" }, REQUEST, outcome({ exit_code: null, signal: "SIGTERM" }), 2.5);
   assert.deepEqual([accepted.exit_code, accepted.signal, accepted.elapsed_ms], [null, "SIGTERM", 2.5]);
 });
+
+test("[OBS-07] [OBS-04] [OBS-05] each process field is read from the caller once, so the type check, sizes, hashes and record agree on it", () => {
+  const reads = { stdin: 0, timeout_ms: 0, stdout: 0, stderr: 0, exit_code: 0 };
+  const errorLine = JSON.stringify({ type: "error", message: "e1" });
+  // each getter gives its first value once and another value of the same type on every later read
+  const request = {
+    command: "provider-cli",
+    get stdin() { return ++reads.stdin === 1 ? "p" : "pp"; },
+    get timeout_ms() { return ++reads.timeout_ms === 1 ? 1000 : 5; },
+  };
+  const result = {
+    signal: null,
+    get stdout() { return ++reads.stdout === 1 ? errorLine : "x"; },
+    get stderr() { return ++reads.stderr === 1 ? "warn" : "other text"; },
+    get exit_code() { return ++reads.exit_code === 1 ? 0 : Infinity; },
+  };
+  const observation = observeProcess({ root_id: "r1" }, request, result, 1);
+  assert.deepEqual(
+    {
+      timeout_ms: observation.timeout_ms,
+      exit_code: observation.exit_code,
+      prompt: [observation.prompt_bytes, observation.prompt_hash],
+      stdout: [observation.stdout_bytes, observation.stdout_hash, observation.errors],
+      stderr: [observation.stderr_bytes, observation.stderr_hash, observation.stderr],
+      reads,
+    },
+    {
+      timeout_ms: 1000,
+      exit_code: 0,
+      prompt: [1, sha256("p")],
+      stdout: [Buffer.byteLength(errorLine), sha256(errorLine), ["e1"]],
+      stderr: [4, sha256("warn"), "warn"],
+      reads: { stdin: 1, timeout_ms: 1, stdout: 1, stderr: 1, exit_code: 1 },
+    },
+  );
+  // a later value of another type is never read; a first value outside the type is refused
+  let stderrReads = 0;
+  const typeChanging = { ...outcome({}), get stderr() { return ++stderrReads === 1 ? "warn" : (5 as unknown as string); } };
+  assert.equal(observeProcess({ root_id: "r1" }, REQUEST, typeChanging, 1).stderr, "warn");
+  let exitReads = 0;
+  const infiniteFirst = { ...outcome({}), get exit_code() { return ++exitReads === 1 ? Infinity : 0; } };
+  assert.throws(
+    () => observeProcess({ root_id: "r1" }, REQUEST, infiniteFirst, 1),
+    (error: unknown) => error instanceof StateError && error.code === "OBSERVATION_INPUT_INVALID",
+  );
+  assert.equal(exitReads, 1);
+});

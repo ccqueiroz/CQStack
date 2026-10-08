@@ -4,7 +4,7 @@ import type { Observation } from "./observation.js";
 import type { ProjectProfile } from "./profile.js";
 import { existsSync, mkdirSync } from "node:fs";
 import { isAbsolute, join, normalize } from "node:path";
-import { ID_PATTERN, StateError, appendLine, assertNoSymlinks, canonicalHash, readText, withMutex } from "./storage.js";
+import { ID_PATTERN, StateError, appendLine, asWritten, assertNoSymlinks, canonicalHash, readText, withMutex } from "./storage.js";
 
 export type ActorKind = "harness" | "human" | "worker";
 export interface Actor {
@@ -158,23 +158,6 @@ function requireActor(actor: Actor | null | undefined): Actor {
   if (typeof actor !== "object" || actor === null)
     throw new StateError("ACTOR_REQUIRED", "Every event needs an actor {kind, id, role?}; there is no default.");
   return actor;
-}
-
-// The value as its JSON line carries it, or undefined when it has none: a bigint, a cycle, a toJSON that throws or gives undefined
-// (JSON.parse of undefined throws), or a value JSON would turn into null or drop (a number that is not finite, a function, a symbol),
-// so NaN never becomes the legitimate null. Checks read this copy: an inherited field or a toJSON cannot pass them and then change the line.
-function asWritten(value: unknown): unknown {
-  try {
-    return JSON.parse(
-      JSON.stringify(value, (_key, item: unknown) => {
-        if ((typeof item === "number" && !Number.isFinite(item)) || typeof item === "function" || typeof item === "symbol")
-          throw new TypeError("no JSON text");
-        return item;
-      }),
-    );
-  } catch {
-    return undefined;
-  }
 }
 
 const isEdge = (graph: Graph, from: string, to: string) => graph.edges.some((edge) => edge.from === from && edge.to === to);

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { ID_PATTERN, StateError } from "./storage.js";
+import { ID_PATTERN, StateError, asWritten } from "./storage.js";
 
 export interface ObservedRequest {
   command: string;
@@ -46,8 +46,8 @@ const redact = (text: string) => {
 
 export function observeProcess(
   attribution: { root_id?: string; item_id?: string },
-  request: ObservedRequest,
-  result: ProcessOutcome,
+  processRequest: ObservedRequest,
+  processResult: ProcessOutcome,
   elapsedMs: number,
 ): Observation {
   const { root_id, item_id } = attribution ?? {};
@@ -57,10 +57,23 @@ export function observeProcess(
       "OBSERVATION_ATTRIBUTION_INVALID",
       "Observation needs the root_id of its root and, when given, a valid item_id",
     );
+  // each field is read from the caller once and kept as its JSON text carries it (none: undefined, refused below), so a getter or a
+  // toJSON cannot pass the checks and then give the sizes, hashes, redaction and record another value
+  const request = asWritten({
+    command: processRequest?.command,
+    stdin: processRequest?.stdin,
+    timeout_ms: processRequest?.timeout_ms,
+  }) as ObservedRequest;
+  const result = asWritten({
+    exit_code: processResult?.exit_code,
+    stdout: processResult?.stdout,
+    stderr: processResult?.stderr,
+    signal: processResult?.signal,
+  }) as ProcessOutcome;
   const isText = (value: unknown) => typeof value === "string";
   // finite only: NaN and the infinities serialize as null, and an infinite exit_code would read as the legitimate null
   const isNumber = (value: unknown) => Number.isFinite(value);
-  // caller values are written, hashed or redacted as they come: another type would skip the redaction or the record's shape
+  // the copies are written, hashed or redacted as they are: another type would skip the redaction or the record's shape
   if (
     !isText(request?.command) || !isText(request.stdin) || !isNumber(request.timeout_ms) || !isNumber(elapsedMs) ||
     !isText(result?.stdout) || !isText(result.stderr) || !(isNumber(result.exit_code) || result.exit_code === null) ||
