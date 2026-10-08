@@ -1132,3 +1132,46 @@ test("[LOG-10] a root id outside the id format is refused by every write without
   }
   assert.equal(existsSync(stateDir), false);
 });
+
+test("[LOG-05] a line whose seq is not its line number or whose task_id is not the root fails the read and every write", () => {
+  const stateDir = temporaryDirectory();
+  const log = new EventLog(stateDir, PROFILE, V1);
+  const events = handLog("r1", "L", ["TASK_CLASSIFIED", "TASK_SENSE_COMPLETE"]);
+  const graphHash = events[0].graph_hash as string;
+  events.push(observedLine("r1", 4, graphHash));
+  const edits: Array<[string, Array<[number, Record<string, unknown>]>]> = [
+    ["seq repeated", [[1, { seq: 1 }]]],
+    ["seq skipped", [[1, { seq: 3 }], [2, { seq: 4 }], [3, { seq: 5 }]]],
+    ["seq out of order", [[1, { seq: 3 }], [2, { seq: 2 }]]],
+    ["seq of the first line", [[0, { seq: 2 }]]],
+    ["seq of the last line", [[3, { seq: 3 }]]],
+    ["task_id of the first line", [[0, { task_id: "r2" }]]],
+    ["task_id of a transition", [[2, { task_id: "r2" }]]],
+    ["task_id of the last line", [[3, { task_id: "r2" }]]],
+  ];
+  for (const [label, changes] of edits) {
+    const edited = events.map((event) => ({ ...event }));
+    for (const [index, change] of changes) Object.assign(edited[index], change);
+    writeLog(stateDir, "r1", edited);
+    const before = bytesOf(stateDir);
+    expectStateError(() => log.events("r1"), "LOG_LINE_INVALID", label);
+    expectStateError(() => log.state("r1"), "LOG_LINE_INVALID", label);
+    expectStateError(() => log.create("r1", { graph: buildGraph("L"), actor: ADA }), "LOG_LINE_INVALID", `create ${label}`);
+    expectStateError(
+      () => log.transition("r1", { to: "DISCOVERY_COMPLETE", expected_revision: 2, graph_hash: graphHash, actor: actorFor("TASK_SENSE_COMPLETE", "DISCOVERY_COMPLETE") }),
+      "LOG_LINE_INVALID",
+      `transition ${label}`,
+    );
+    expectStateError(
+      () => log.recordObservation("r1", { actor: WORKER, observation: observationOf({ root_id: "r1" }), payload_ref: "observations/two.json" }),
+      "LOG_LINE_INVALID",
+      `observation ${label}`,
+    );
+    assert.deepEqual(bytesOf(stateDir), before);
+    assert.equal(existsSync(join(stateDir, "r1.lock")), false);
+  }
+  writeLog(stateDir, "r1", events);
+  const next = log.transition("r1", { to: "DISCOVERY_COMPLETE", expected_revision: 2, graph_hash: graphHash, actor: actorFor("TASK_SENSE_COMPLETE", "DISCOVERY_COMPLETE") });
+  assert.equal(next.seq, 5);
+  assert.deepEqual(log.events("r1").map((event) => event.seq), [1, 2, 3, 4, 5]);
+});

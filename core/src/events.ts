@@ -316,6 +316,10 @@ export class EventLog {
     const recreated = events.findIndex((event, index) => index > 0 && event.event_type === "task.created");
     if (recreated !== -1)
       throw new StateError("LOG_LINE_INVALID", `Event log line ${recreated + 1} is invalid: ${file}: task.created is only the first line`);
+    // (root_id, seq) is the event identity and the root is the only task, so seq is the line number and task_id the root id
+    const misplaced = events.findIndex((event, index) => event.seq !== index + 1 || event.task_id !== rootId);
+    if (misplaced !== -1)
+      throw new StateError("LOG_LINE_INVALID", `Event log line ${misplaced + 1} is invalid: ${file}: seq is not the line number or task_id is not the root`);
     return { events, view: deriveView(rootId, events) };
   }
 }
