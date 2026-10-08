@@ -1453,3 +1453,32 @@ test("[LOG-11] a link put in place of the log file after the path check is refus
   assert.equal(readFileSync(outside, "utf8"), "keep\n");
   assert.equal(existsSync(join(base, "created-through-link.jsonl")), false);
 });
+
+test("[ACTOR-04] [GRAPH-08] [LOG-03] the schema reads the actor as the line carries it, and a write returns exactly the line it appended", () => {
+  const stateDir = temporaryDirectory();
+  const log = createdRoot(stateDir, "L", L_PATH_TO_GAP);
+  const view = log.state("r1");
+  const before = bytesOf(stateDir);
+  for (const json of [{ ...ADA, role: "" }, { ...ADA, team: "core" }]) {
+    expectStateError(() => log.create("r2", { graph: buildGraph("L"), actor: withToJson(ADA, json) }), "EVENT_SCHEMA_VIOLATION", `create ${JSON.stringify(json)}`);
+    expectStateError(
+      () => log.transition("r1", { to: "DECIDED", expected_revision: view.revision, graph_hash: view.graph_hash, actor: withToJson(ADA, json) }),
+      "EVENT_SCHEMA_VIOLATION",
+      `decide ${JSON.stringify(json)}`,
+    );
+  }
+  const observation = observationOf({ root_id: "r1" });
+  const worker = withToJson(WORKER, { ...WORKER, role: "" });
+  expectStateError(() => log.recordObservation("r1", { actor: worker, observation, payload_ref: "observations/one.json" }), "EVENT_SCHEMA_VIOLATION", "worker role");
+  assert.deepEqual(bytesOf(stateDir), before);
+  assert.deepEqual(readdirSync(stateDir).sort(), ["r1.jsonl"]);
+  // accepted: a toJSON that gives another value on each call is read once, and the line, its graph_hash and the returned event agree
+  let calls = 0;
+  const graphL = buildGraph("L");
+  const shifting = Object.defineProperty({ ...graphL }, "toJSON", { value: () => (++calls === 1 ? graphL : buildGraph("S")) });
+  const fresh = new EventLog(temporaryDirectory(), PROFILE, V1);
+  const created = fresh.create("r1", { graph: shifting, actor: withToJson({ ...ADA, role: "lead" }, ADA) });
+  assert.deepEqual(created.actor, ADA);
+  assert.deepEqual(fresh.events("r1"), [created]);
+  assert.equal(fresh.state("r1").track, "L");
+});
