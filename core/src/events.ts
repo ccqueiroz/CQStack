@@ -189,7 +189,8 @@ export class EventLog {
       throw new StateError("STATE_DIR_INVALID", `State directory must be a non-empty, absolute, normalized path: ${String(stateDir)}`);
     this.stateDir = stateDir;
     this.profile = profile;
-    this.harnessVersion = harnessVersion;
+    // copied here and into each event, so neither the caller nor a returned event changes the version read at boot
+    this.harnessVersion = { ...harnessVersion };
   }
 
   create(rootId: string, request: { graph?: Graph | null; actor?: Actor | null }): Event {
@@ -296,7 +297,7 @@ export class EventLog {
           : typeof actor.id === "string" && ID_PATTERN.test(actor.id);
     if (!idIsValid) throw new StateError("ACTOR_ID_INVALID", `Actor id for kind ${expectedKind} must be ${ID_RULES[expectedKind]}: ${String(actor.id)}`);
     const { seq, event_type, ...rest } = fields;
-    const event = { seq, ts: new Date().toISOString(), root_id: rootId, task_id: rootId, event_type, ...rest, harness_version: this.harnessVersion };
+    const event = { seq, ts: new Date().toISOString(), root_id: rootId, task_id: rootId, event_type, ...rest, harness_version: { ...this.harnessVersion } };
     const violations = eventViolations(event);
     if (violations.length > 0) throw new StateError("EVENT_SCHEMA_VIOLATION", `Event does not match the schema: ${violations.join("; ")}`);
     return event;

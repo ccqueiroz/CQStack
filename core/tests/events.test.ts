@@ -1259,3 +1259,45 @@ test("[OBS-03] [OBS-07] an observation that is incomplete or has a field of anot
   }
   assert.equal(log.events("r1").length, 3);
 });
+
+test("[VER-01] [VER-02] [VER-04] each event keeps the harness version given to the constructor, whatever is changed in the argument or in a returned event", () => {
+  const stateDir = temporaryDirectory();
+  const version: HarnessVersion = { tag: "v9.9.9", commit: "1".repeat(40) };
+  const log = new EventLog(stateDir, PROFILE, version);
+  version.tag = "v0.0.0";
+  version.commit = "f".repeat(40);
+  const created = log.create("r1", { graph: buildGraph("L"), actor: ADA });
+  assert.deepEqual(created.harness_version, V1);
+  created.harness_version.tag = "v1.1.1";
+  created.harness_version.commit = "e".repeat(40);
+  const toClassified = (id: string) => () =>
+    log.transition("r1", { to: "TASK_CLASSIFIED", expected_revision: 0, graph_hash: created.graph_hash, actor: { kind: "harness", id } });
+  expectStateError(toClassified("v1.1.1"), "ACTOR_ID_INVALID", "tag changed in a returned event");
+  expectStateError(toClassified("v0.0.0"), "ACTOR_ID_INVALID", "tag changed in the constructor argument");
+  const moved = toClassified("v9.9.9")();
+  assert.deepEqual(moved.harness_version, V1);
+  assert.notEqual(moved.harness_version, created.harness_version);
+  assert.notEqual(moved.harness_version, version);
+  assert.deepEqual(log.events("r1").map((event) => event.harness_version), [V1, V1]);
+  const before = bytesOf(stateDir);
+  // without a tag or commit no harness id can match; with a field more the tag matches and the schema refuses the version
+  const malformed: Array<[unknown, StateErrorCode]> = [
+    [null, "ACTOR_ID_INVALID"],
+    [undefined, "ACTOR_ID_INVALID"],
+    ["v9.9.9", "ACTOR_ID_INVALID"],
+    [1n, "ACTOR_ID_INVALID"],
+    [{ ...V1, extra: "x" }, "EVENT_SCHEMA_VIOLATION"],
+  ];
+  for (const [other, transitionCode] of malformed) {
+    const otherLog = new EventLog(stateDir, PROFILE, other as HarnessVersion);
+    expectStateError(() => otherLog.create("r2", { graph: buildGraph("L"), actor: ADA }), "EVENT_SCHEMA_VIOLATION", `create ${String(other)}`);
+    expectStateError(
+      () => otherLog.transition("r1", { to: "TASK_SENSE_COMPLETE", expected_revision: 1, graph_hash: created.graph_hash, actor: { kind: "harness", id: "v9.9.9" } }),
+      transitionCode,
+      `transition ${String(other)}`,
+    );
+  }
+  assert.deepEqual(bytesOf(stateDir), before);
+  assert.equal(existsSync(join(stateDir, "r2.jsonl")), false);
+  assert.deepEqual(readdirSync(stateDir).sort(), ["r1.jsonl"]);
+});
