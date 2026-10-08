@@ -66,7 +66,8 @@ export function buildGraph(track: unknown = "L", stages: readonly string[] = [])
   const declared = track as Track;
   return {
     track: declared,
-    stages: [...stages],
+    // a text is iterable: spread, it would become one stage per character; kept as given, the schema refuses it on create
+    stages: Array.isArray(stages) ? [...stages] : (stages as string[]),
     edges: [...COMMON_EDGES.map(({ from, to }) => edge(from, to)), edge("DISCOVERY_COMPLETE", TRACK_TARGETS[declared])],
   };
 }

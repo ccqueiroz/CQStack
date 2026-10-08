@@ -684,6 +684,26 @@ test("[VER-02] a malformed harness version stops every create", () => {
   assert.equal(existsSync(join(stateDir, "r1.lock")), false);
 });
 
+test("[GRAPH-07] [GRAPH-08] stages that are not a list are kept as given, and creating with them is refused", () => {
+  const stateDir = temporaryDirectory();
+  const log = new EventLog(stateDir, PROFILE, V1);
+  for (const stages of ["ab", "prototype"]) {
+    const graph = buildGraph("L", stages as unknown as string[]);
+    assert.equal(graph.stages, stages);
+    expectStateError(() => log.create("r1", { graph, actor: ADA }), "EVENT_SCHEMA_VIOLATION", stages);
+  }
+  // shapes the canonical hash cannot take: a bigint, an object that holds itself, a list that holds itself
+  const cyclic: Record<string, unknown> = { ...buildGraph("L") };
+  cyclic.loop = cyclic;
+  const selfHolding: unknown[] = [];
+  selfHolding.push(selfHolding);
+  const malformed = [buildGraph("L", 1n as unknown as string[]), cyclic, buildGraph("L", selfHolding as string[])];
+  malformed.forEach((graph, index) => {
+    expectStateError(() => log.create("r1", { graph: graph as ReturnType<typeof buildGraph>, actor: ADA }), "EVENT_SCHEMA_VIOLATION", `shape ${index + 1}`);
+  });
+  assert.deepEqual(readdirSync(stateDir), []);
+});
+
 const HUMAN_EDGES_ORACLE = [
   "GAP_DEFINED>DECIDED",
   "PLAN_PROPOSED>PLAN_APPROVED",

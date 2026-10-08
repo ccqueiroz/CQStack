@@ -100,7 +100,10 @@ export const EVENT_SCHEMA = {
   },
 };
 
-const validateEvent = new Ajv({ allErrors: true, strict: true }).compile(EVENT_SCHEMA);
+const ajv = new Ajv({ allErrors: true, strict: true });
+const validateEvent = ajv.compile(EVENT_SCHEMA);
+// the graph alone, so create refuses it before the canonical hash, which throws on a bigint and recurses on a cycle
+const validateGraph = ajv.compile(EVENT_SCHEMA.properties.graph);
 
 export function eventViolations(value: unknown): string[] {
   if (validateEvent(value)) return [];
@@ -168,6 +171,7 @@ export class EventLog {
     if (graph === undefined || graph === null)
       throw new StateError("GRAPH_MISSING", `Root has no graph recorded in task.created: ${rootId}`);
     const author = requireActor(actor);
+    if (!validateGraph(graph)) throw new StateError("EVENT_SCHEMA_VIOLATION", `Graph does not match the schema of task.created: ${rootId}`);
     assertNoSymlinks(log);
     mkdirSync(this.stateDir, { recursive: true, mode: 0o700 });
     return withMutex(lock, () => {
