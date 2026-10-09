@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { StateError } from "../src/storage.js";
-import { readHarnessVersion } from "../src/git.js";
+import { readHarnessVersion, runGit } from "../src/git.js";
 import { temporaryDirectory } from "./helpers.js";
 
 // Only PATH and fixed -c options: the user's git configuration never signs, prompts or prints hints here.
@@ -95,4 +95,23 @@ test("[VER-01] a relative clone root, a folder that is not a git clone or a clon
   await expectUnavailable(readHarnessVersion(""), "empty");
   await expectUnavailable(readHarnessVersion(temporaryDirectory()), "not a clone");
   await expectUnavailable(readHarnessVersion(repository()), "no commit");
+});
+
+test("[AREA-05] [E6] runGit runs git with the environment and the time limit of the caller, or only PATH and 10 s", async () => {
+  const home = temporaryDirectory();
+  writeFileSync(join(home, ".gitconfig"), "[probe]\n\tvalue = from-home\n");
+  const read = (options?: { env?: Record<string, string>; timeoutMs?: number }) =>
+    runGit(home, ["config", "--global", "--get", "probe.value"], options).catch(() => "rejected");
+  assert.equal(await read({ env: { PATH: process.env.PATH ?? "", HOME: home } }), "from-home\n");
+  assert.equal(await read(), "rejected");
+  assert.equal(await read({ timeoutMs: 10_000 }), "rejected");
+  const shim = temporaryDirectory();
+  writeFileSync(join(shim, "git"), "#!/bin/sh\nexec sleep 2\n", { mode: 0o755 });
+  const started = Date.now();
+  const outcome = await runGit(shim, ["status"], { env: { PATH: shim + delimiter + (process.env.PATH ?? "") }, timeoutMs: 200 }).then(
+    () => "resolved",
+    (error: { killed?: boolean }) => (error.killed === true ? "killed" : "failed"),
+  );
+  assert.equal(outcome, "killed");
+  assert.ok(Date.now() - started < 1500, `took ${Date.now() - started} ms`);
 });
