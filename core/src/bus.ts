@@ -12,6 +12,7 @@ import {
   realpathSync,
   renameSync,
   rmSync,
+  rmdirSync,
   statSync,
   writeFileSync,
   type Stats,
@@ -197,11 +198,30 @@ async function prepareRepository(target: string, home: string, clone?: { remote:
   return prepared;
 }
 
-// Nothing once the temporary folder is in place; otherwise it goes, with the parents made for it.
+// false when another boot put the target in place first
+function publish(prepared: Prepared): boolean {
+  try {
+    renameSync(prepared.temporary, prepared.target);
+    return true;
+  } catch (error) {
+    if (["ENOTEMPTY", "EEXIST"].includes((error as NodeJS.ErrnoException).code ?? "")) return false;
+    throw error;
+  }
+}
+
+// Nothing once the temporary folder is in place. Otherwise it goes, and the parents made for it go only while empty: a boot
+// running at the same time may already keep its store in them.
 function discard(prepared: Prepared | undefined): void {
   if (prepared === undefined || statOf(prepared.temporary) === undefined) return;
   rmSync(prepared.temporary, { recursive: true, force: true });
-  if (prepared.firstCreated !== undefined) rmSync(prepared.firstCreated, { recursive: true, force: true });
+  for (let folder = dirname(prepared.target); prepared.firstCreated !== undefined; folder = dirname(folder)) {
+    try {
+      rmdirSync(folder);
+    } catch {
+      break;
+    }
+    if (folder === prepared.firstCreated) break;
+  }
 }
 
 function ensureExcluded(excludeFile: string, line: string): void {
@@ -216,24 +236,32 @@ function ensureExcluded(excludeFile: string, line: string): void {
   appendFileSync(excludeFile, (text === "" || text.endsWith("\n") ? "" : "\n") + line + "\n");
 }
 
-function writeBindingFile(file: string, binding: ProjectBinding): void {
+function writeNewFile(file: string, text: string): void {
   const descriptor = openSync(file, "wx", 0o600);
   try {
-    writeFileSync(descriptor, JSON.stringify(binding, null, 2) + "\n");
+    writeFileSync(descriptor, text);
     fsyncSync(descriptor);
   } finally {
     closeSync(descriptor);
   }
 }
 
-// Linked into an area that exists, never renamed over: an existing binding is never replaced. The file is written in a
-// temporary folder beside the area, outside its git, and the folder goes either way.
-function linkBinding(area: string, binding: ProjectBinding): void {
+// Linked into place whole, never renamed over: a file already there is never replaced, and false means another boot linked
+// first. The file is written in a temporary folder beside the area, outside its git, and the folder goes either way: a boot
+// killed while it writes leaves only that folder.
+function linkNewFile(area: string, file: string, text: string): boolean {
   const temporary = mkdtempSync(join(dirname(area), `.${basename(area)}.partial-`));
+  const written = join(temporary, basename(file));
   try {
-    writeBindingFile(join(temporary, BINDING_FILE_NAME), binding);
-    linkSync(join(temporary, BINDING_FILE_NAME), join(area, BINDING_FILE_NAME));
-    syncFolder(area);
+    writeNewFile(written, text);
+    try {
+      linkSync(written, file);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
+      throw error;
+    }
+    syncFolder(dirname(file));
+    return true;
   } finally {
     rmSync(temporary, { recursive: true, force: true });
   }
@@ -270,8 +298,8 @@ function isInside(child: string, parent: string): boolean {
 }
 
 // No link and no folder open to others on the way to the state folder and the binding, no file where a folder goes, and a
-// .gitignore already in the state folder (a crash between creating and writing it leaves it empty) that keeps the whole folder
-// out of git.
+// .gitignore already in the state folder that keeps the whole folder out of git: the boot links only a whole one, but one put
+// there by hand may not.
 function assertStatePath(stateDir: string, bindingFile: string, home: string): void {
   assertTrustedPath(stateDir);
   assertTrustedPath(bindingFile);
@@ -320,7 +348,7 @@ export async function createBus(options: BusOptions): Promise<Bus> {
   if (store !== area && (isInside(store, area) || isInside(area, store)))
     throw new StateError("STORE_PATH_INVALID", `Memory store must not be inside the local area or contain it: ${store}`);
   assertStatePath(stateDir, bindingFile, home);
-  const bound = statOf(bindingFile) !== undefined;
+  let bound = statOf(bindingFile) !== undefined;
   if (bound) assertBoundTo(readBinding(bindingFile, profile), root, bindingFile);
   const storeRepository = await repositoryAt(store, clone);
   if (storeRepository === "not a repository") throw notRepository(store);
@@ -330,7 +358,8 @@ export async function createBus(options: BusOptions): Promise<Bus> {
   if (store === area && storeRepository !== "absent") await assertLocalFilesOutOfGit(store, stateRel, store);
 
   // only from here on is anything written. The repositories are made in temporary folders, and the binding claims the area
-  // (inside the area put in place, or linked into one that exists) before the store is put in place or the state folder is made
+  // (inside the area put in place, or linked into one that exists) before the store is put in place or the state folder is
+  // made: a boot refused for another root leaves nothing behind
   const { remote } = profile.knowledge_store;
   const cloneOptions = remote === undefined ? undefined : { remote, timeoutMs: options.cloneTimeoutMs ?? 120_000 };
   const binding: ProjectBinding = {
@@ -340,33 +369,47 @@ export async function createBus(options: BusOptions): Promise<Bus> {
     profile_hash: canonicalHash(profile),
     created_at: new Date().toISOString(),
   };
+  const bindingText = JSON.stringify(binding, null, 2) + "\n";
   let storeMade: Prepared | undefined;
   let areaMade: Prepared | undefined;
+  let areaPublished = false;
   try {
     if (store !== area && storeRepository === "absent") storeMade = await prepareRepository(store, home, cloneOptions);
     if (areaRepository === "absent") {
       areaMade = await prepareRepository(area, home, store === area && cloneOptions !== undefined ? { ...cloneOptions, stateRel } : undefined);
       ensureExcluded(join(areaMade.temporary, ".git", "info", "exclude"), `/${BINDING_FILE_NAME}`);
-      writeBindingFile(join(areaMade.temporary, BINDING_FILE_NAME), binding);
+      writeNewFile(join(areaMade.temporary, BINDING_FILE_NAME), bindingText);
       // checked in the temporary folder, as the clone made it (its folders follow the umask): once the area is in place, a
       // refusal would leave it behind
       assertStatePath(join(areaMade.temporary, stateRel), join(areaMade.temporary, BINDING_FILE_NAME), home);
-      renameSync(areaMade.temporary, area);
-      // made here by git init or git clone, so its git folder is .git: git is not asked again once the area is in place
-      areaRepository = { excludeFile: join(area, ".git", "info", "exclude") };
-    } else if (!bound) linkBinding(area, binding);
+      areaPublished = publish(areaMade);
+      if (areaPublished) {
+        bound = true;
+        // made here by git init or git clone, so its git folder is .git: git is not asked again once the area is in place
+        areaRepository = { excludeFile: join(area, ".git", "info", "exclude") };
+      } else {
+        // another boot put the area in place first: its binding decides, and the area is read as it is now
+        areaRepository = await repositoryAt(area, clone);
+        if (typeof areaRepository !== "object") throw notRepository(area);
+        bound = statOf(bindingFile) !== undefined;
+        if (bound) assertBoundTo(readBinding(bindingFile, profile), root, bindingFile);
+        if (store === area) await assertLocalFilesOutOfGit(area, stateRel, store);
+      }
+    }
+    // again right before writing, on an area this boot did not put in place: the one found may not be the disk checked above
+    // (another boot made it, with its own profile)
+    if (!areaPublished) assertStatePath(stateDir, bindingFile, home);
+    if (!bound && !linkNewFile(area, bindingFile, bindingText)) assertBoundTo(readBinding(bindingFile, profile), root, bindingFile);
     if (typeof areaRepository === "object") ensureExcluded(areaRepository.excludeFile, `/${BINDING_FILE_NAME}`);
-    if (storeMade !== undefined) renameSync(storeMade.temporary, store);
+    // a store put at the declared path meanwhile, by a boot of the same root, is used as it is
+    if (storeMade !== undefined && !publish(storeMade) && typeof (await repositoryAt(store, clone)) !== "object") throw notRepository(store);
   } finally {
     discard(storeMade);
     discard(areaMade);
   }
   mkdirSync(stateDir, { recursive: true, mode: 0o700 });
-  try {
-    // "*" keeps the whole state folder, this file included, out of the git of the area wherever state_dir puts it
-    writeFileSync(join(stateDir, ".gitignore"), "*\n", { flag: "wx", mode: 0o600 });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-  }
+  // "*" keeps the whole state folder, this file included, out of the git of the area wherever state_dir puts it. Linked whole:
+  // one already there was linked whole by another boot or checked above
+  linkNewFile(area, join(stateDir, ".gitignore"), "*\n");
   return { log: new EventLog(stateDir, profile, version), version };
 }
