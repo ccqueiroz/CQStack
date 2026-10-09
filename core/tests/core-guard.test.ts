@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { lstatSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { temporaryDirectory } from "./helpers.js";
@@ -12,7 +12,7 @@ const FORBIDDEN_TERMS: ReadonlyArray<readonly [length: number, sha256: string]> 
   [[7, "c5fa8aba36db1004d4af8e7131d2fcc7cdcdc5db1c90a9e10364b6421232e701"]]; // ponytail: only the known old name; a new term is a new pair
 // The slashes are escaped, so this source line never matches itself.
 const USER_HOME_PATH = /(?:\/(?:Users|home)\/|[A-Za-z]:\\{1,2}Users\\{1,2})[^\s\/\\"'`]+/;
-const LEGACY_PATHS = ["README.md", "config", "docs", "examples", "governance", "mcp", "runtime", "scripts"];
+const LEGACY_PATHS = ["README.md", "config", "docs", "examples", "governance", "runtime", "scripts"];
 const BASE_COMMIT = "f291a38d40e80149326a72cb8a8ddea3de9146a4";
 const FICTITIOUS_TERMS = [[7, createHash("sha256").update("zorblax").digest("hex")]] as const;
 // Decision 38: no MCP approval prompt. One 6-letter window covers every identifier of the SDK for it.
@@ -282,4 +282,22 @@ test("[PROOF-03] [PROOF-04] MCP approval-prompt identifiers are found with file 
     [],
   );
   assert.throws(() => findViolations(directoryWithFiles({}), [], [], LEGACY_PATHS), { message: "GUARD_TERMS_INVALID" });
+});
+
+test("[SRV-04] mcp/server.ts is in the file list and both guards scan it with the real LEGACY_PATHS", () => {
+  assert.ok(listRepositoryFiles(REPOSITORY_ROOT).includes("mcp/server.ts"));
+  const files = { "mcp/server.ts": "zorblax\nserver." + ["eli", "citInput"].join("") + "({})" };
+  const directory = directoryWithFiles(files);
+  assert.deepEqual(findViolations(directory, Object.keys(files), FICTITIOUS_TERMS, LEGACY_PATHS), ["mcp/server.ts:1: forbidden term #0"]);
+  assert.deepEqual(findViolations(directory, Object.keys(files), APPROVAL_PROMPT_TERMS, LEGACY_PATHS), ["mcp/server.ts:2: forbidden term #0"]);
+});
+
+test("[BOOT-04] [BOOT-07] only mcp/server.ts reads CLAUDE_PROJECT_DIR, the home folder and its own position; core/src reads none of them nor the cwd", () => {
+  const reads = ["process.cwd", "CLAUDE_PROJECT_DIR", "homedir", "import.meta"];
+  for (const file of readdirSync(join(REPOSITORY_ROOT, "core", "src"))) {
+    const text = readFileSync(join(REPOSITORY_ROOT, "core", "src", file), "utf8");
+    assert.deepEqual(reads.filter((read) => text.includes(read)), [], file);
+  }
+  const entry = readFileSync(join(REPOSITORY_ROOT, "mcp", "server.ts"), "utf8");
+  assert.deepEqual(reads.filter((read) => entry.includes(read)), ["CLAUDE_PROJECT_DIR", "homedir", "import.meta"]);
 });
