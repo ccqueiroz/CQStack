@@ -372,3 +372,85 @@ test("[PROF-09] a path field that is not a relative path is rejected", () => {
     }
   }
 });
+
+const STATE_DIR_RULE = "/state_dir must be a folder inside the local area, not the area itself, its .git or its project.json";
+
+test("[STATE-03] a state_dir outside the local area, the area itself, its .git or its project.json is refused by the loader", () => {
+  for (const value of ["/x", "/", "/.git", "-x", "C:x", "a\\b", "a\u0000b", "../x", "a/../b", ".."])
+    assertExactViolation(profileWith("/state_dir", value), `/state_dir ${RELATIVE_PATH_RULE}`);
+  for (const value of [".", "./", ".//.", ".git", ".git/", ".git/x", "./.git/x", ".//.git/x", ".GIT/x", ".Git", "project.json", "./project.json", "Project.JSON/x"])
+    assertExactViolation(profileWith("/state_dir", value), STATE_DIR_RULE);
+  for (const value of ["state", "runs", "runs/", "./runs", "runs/x", "x/.git", "x/project.json", ".gitx", ".gi", "project.jsonx", "project.jso"]) {
+    const profile = profileWith("/state_dir", value);
+    assert.deepEqual(loadProfile(projectRootWithProfile(profile)), profile, value);
+  }
+});
+
+test("[E3] the memory remote accepts only https://, ssh:// and user@host:path, without credentials, and the refusal never shows the value", () => {
+  const accepted = [
+    "https://host/acme/store.git",
+    "https://host:8443/x",
+    "https://h/x",
+    "https://my-host.example.com/a/b.git",
+    "ssh://git@host/x",
+    "ssh://g@host/x",
+    "ssh://host:22/x",
+    "ssh://_u.v-w@h-1.example/x",
+    "git@host:acme/store.git",
+    "g@h:x",
+    "git@host:/abs/store.git",
+  ];
+  for (const remote of accepted) {
+    const profile = profileWith("/knowledge_store/remote", remote);
+    assert.deepEqual(loadProfile(projectRootWithProfile(profile)), profile, remote);
+  }
+  const refused = [
+    "ext::sh -c x",
+    "ext::sh%20-c%20x",
+    "fd::17",
+    "file:///x",
+    "/abs/x",
+    "./x",
+    "../x",
+    "C:/x",
+    "http://host/x",
+    "git://host/x",
+    "https://user:S3CRETVALUE@host/x",
+    "https://S3CRETVALUE@host/x",
+    "ssh://user:S3CRETVALUE@host/x",
+    "ssh://-oProxyCommand=x/y",
+    "-oProxyCommand=x",
+    "host:path",
+    "git@host::x",
+    "https://host/x?access_token=S3CRETVALUE",
+    "https://host/x#S3CRETVALUE",
+    "ssh://host/x?S3CRETVALUE",
+    "https://-host/x",
+    "https://host",
+    "https://host/",
+    "https://host:x/y",
+    "https://host:/y",
+    "ssh://u@-host/x",
+    "ssh://-u@host/x",
+    "-u@host:x",
+    "u@-host:x",
+    "u@host:",
+    "https://host/x\ny",
+    "u@host:x\nhttps://host/x",
+    "ssh://host/x y",
+    "ssh://host/x#S3CRETVALUE",
+    "ssh://host/",
+    "ssh://host:/x",
+    "ssh://host:2:2/x",
+    "ssh://u@v@host/x",
+    "https://host:1:2/x",
+    "user:S3CRETVALUE@host:acme/store.git",
+    "git@host: x",
+  ];
+  for (const remote of refused) {
+    const projectRoot = projectRootWithProfile(profileWith("/knowledge_store/remote", remote));
+    const message = expectProfileError(() => loadProfile(projectRoot), "PROFILE_SCHEMA_VIOLATION");
+    assert.ok(message.includes("/knowledge_store/remote must match pattern"), `${remote}: ${message}`);
+    assert.ok(!message.includes("S3CRETVALUE"), message);
+  }
+});
