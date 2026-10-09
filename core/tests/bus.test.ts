@@ -538,3 +538,77 @@ test('[STATE-04] [BOOT-08] a state folder whose .gitignore is not a file of "*" 
     await expectRefusedUnchanged({ projectRoot, cloneRoot, homeDir: home }, "STORE_TRACKS_LOCAL_FILES", [home, projectRoot], label);
   }
 });
+
+test("[BIND-02] another root with the same project_id is refused with BINDING_ROOT_MISMATCH, with the binding and the area unchanged", async () => {
+  const { cloneRoot } = fakeClone();
+  const home = temporaryDirectory();
+  const first = writeProject();
+  await createBus({ projectRoot: first, cloneRoot, homeDir: home });
+  assert.equal(existsSync(join(areaOf(home), "project.json")), true);
+  const other = writeProject();
+  await expectRefusedUnchanged({ projectRoot: other, cloneRoot, homeDir: home }, "BINDING_ROOT_MISMATCH", [home, other], "other root");
+  const moved = join(temporaryDirectory(), "moved");
+  mkdirSync(moved);
+  writeProject({}, moved);
+  await expectRefusedUnchanged({ projectRoot: moved, cloneRoot, homeDir: home }, "BINDING_ROOT_MISMATCH", [home, moved], "moved");
+});
+
+test("[BIND-03] [E4] a binding that is not valid is refused with BINDING_INVALID and never rewritten", async () => {
+  const { cloneRoot } = fakeClone();
+  const projectRoot = writeProject();
+  const valid = {
+    project_id: "acme-toy",
+    project_root: projectRoot,
+    profile_path: join(projectRoot, PROFILE_FILE_NAME),
+    profile_hash: "a".repeat(64),
+    created_at: "2026-10-08T12:00:00.000Z",
+  };
+  const without = (field: keyof typeof valid) => Object.fromEntries(Object.entries(valid).filter(([key]) => key !== field));
+  const texts: string[] = [
+    "",
+    "{",
+    "[]",
+    "null",
+    '"x"',
+    "42",
+    JSON.stringify({ ...valid, extra: "x" }),
+    ...(Object.keys(valid) as Array<keyof typeof valid>).map((field) => JSON.stringify(without(field))),
+    JSON.stringify({ ...valid, project_id: "other-toy" }),
+    JSON.stringify({ ...valid, project_id: "Acme-toy" }),
+    JSON.stringify({ ...valid, project_root: "relative/project" }),
+    JSON.stringify({ ...valid, project_root: projectRoot + "/" }),
+    JSON.stringify({ ...valid, project_root: projectRoot + "/sub/.." }),
+    JSON.stringify({ ...valid, project_root: 1 }),
+    JSON.stringify({ ...valid, profile_path: join(temporaryDirectory(), PROFILE_FILE_NAME) }),
+    JSON.stringify({ ...valid, profile_path: join(projectRoot, "other.json") }),
+    JSON.stringify({ ...valid, profile_path: "cqstack.profile.json" }),
+    JSON.stringify({ ...valid, profile_hash: "a".repeat(63) }),
+    JSON.stringify({ ...valid, profile_hash: "a".repeat(65) }),
+    JSON.stringify({ ...valid, profile_hash: "A".repeat(64) }),
+    JSON.stringify({ ...valid, created_at: "2026-10-08" }),
+    JSON.stringify({ ...valid, created_at: "2026-10-08T12:00:00Z" }),
+    JSON.stringify({ ...valid, created_at: "x2026-10-08T12:00:00.000Z" }),
+    JSON.stringify({ ...valid, created_at: "2026-10-08T12:00:00.000Zx" }),
+    ...["202a-10-08T12:00:00.000Z", "2026-1a-08T12:00:00.000Z", "2026-10-0aT12:00:00.000Z", "2026-10-08T1a:00:00.000Z",
+      "2026-10-08T12:0a:00.000Z", "2026-10-08T12:00:0a.000Z", "2026-10-08T12:00:00.00aZ", "2026-10-08T12:00:00a000Z",
+      "2026-10-08 12:00:00.000Z", "2026-10-08T12:00:00.000z"].map((created_at) => JSON.stringify({ ...valid, created_at })),
+    ...["g".repeat(64), "a".repeat(63) + " ", "-" + "a".repeat(63)].map((profile_hash) => JSON.stringify({ ...valid, profile_hash })),
+  ];
+  await Promise.all(
+    texts.map(async (text) => {
+      const home = temporaryDirectory();
+      await createBus({ projectRoot, cloneRoot, homeDir: home });
+      writeFileSync(join(areaOf(home), "project.json"), text);
+      await expectRefusedUnchanged({ projectRoot, cloneRoot, homeDir: home }, "BINDING_INVALID", [home], text);
+    }),
+  );
+  const folder = temporaryDirectory();
+  await createBus({ projectRoot, cloneRoot, homeDir: folder });
+  rmSync(join(areaOf(folder), "project.json"));
+  mkdirSync(join(areaOf(folder), "project.json"));
+  await expectRefusedUnchanged({ projectRoot, cloneRoot, homeDir: folder }, "BINDING_INVALID", [folder], "folder");
+  const home = temporaryDirectory();
+  await createBus({ projectRoot, cloneRoot, homeDir: home });
+  writeFileSync(join(areaOf(home), "project.json"), JSON.stringify(valid));
+  await createBus({ projectRoot, cloneRoot, homeDir: home });
+});

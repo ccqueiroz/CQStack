@@ -1,3 +1,4 @@
+import { Ajv } from "ajv";
 import {
   appendFileSync,
   closeSync,
@@ -18,8 +19,8 @@ import {
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { EventLog, type HarnessVersion } from "./events.js";
 import { readHarnessVersion, runGit } from "./git.js";
-import { BINDING_FILE_NAME, PROFILE_FILE_NAME, ProfileError, loadProfile } from "./profile.js";
-import { StateError, assertTrustedPath, canonicalHash, readText, syncFolder } from "./storage.js";
+import { BINDING_FILE_NAME, PROFILE_FILE_NAME, ProfileError, loadProfile, type ProjectProfile } from "./profile.js";
+import { ID_PATTERN, StateError, assertTrustedPath, canonicalHash, readText, syncFolder } from "./storage.js";
 
 export interface BusOptions {
   projectRoot: string | undefined;
@@ -40,6 +41,20 @@ export interface ProjectBinding {
   profile_hash: string;
   created_at: string;
 }
+
+const ajv = new Ajv({ allErrors: true, strict: true });
+const validateBinding = ajv.compile<ProjectBinding>({
+  type: "object",
+  properties: {
+    project_id: { type: "string", pattern: ID_PATTERN.source },
+    project_root: { type: "string" },
+    profile_path: { type: "string" },
+    profile_hash: { type: "string", pattern: "^[0-9a-f]{64}$" },
+    created_at: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$" },
+  },
+  required: ["project_id", "project_root", "profile_path", "profile_hash", "created_at"],
+  additionalProperties: false,
+});
 
 // The environment of git in the memory store: the user's own git and ssh configuration (credential helper, keys, agent), and
 // never a prompt, since the session has no terminal for it.
@@ -169,6 +184,31 @@ function linkBinding(area: string, binding: ProjectBinding): void {
   }
 }
 
+// A binding found on disk is read, never rewritten: a refusal leaves it for the user to fix.
+function readBinding(file: string, profile: ProjectProfile): ProjectBinding {
+  const invalid = (reason: string) => new StateError("BINDING_INVALID", `Project binding is not valid: ${file}: ${reason}`);
+  let binding: unknown;
+  try {
+    binding = JSON.parse(readText(file));
+  } catch (error) {
+    if (error instanceof StateError) throw error;
+    throw invalid((error as Error).message);
+  }
+  if (!validateBinding(binding)) throw invalid(ajv.errorsText(validateBinding.errors));
+  if (binding.project_id !== profile.project_id) throw invalid(`project_id is not ${profile.project_id}, the one of the profile`);
+  if (resolve(binding.project_root) !== binding.project_root) throw invalid("project_root is not an absolute, normalized path");
+  if (binding.profile_path !== join(binding.project_root, PROFILE_FILE_NAME)) throw invalid("profile_path is not the profile of project_root");
+  return binding;
+}
+
+function assertBoundTo(binding: ProjectBinding, root: string, file: string): void {
+  if (binding.project_root !== root)
+    throw new StateError(
+      "BINDING_ROOT_MISMATCH",
+      `Project ${binding.project_id} is bound to another root: ${binding.project_root} (received ${root}); edit or remove ${file} to bind it again`,
+    );
+}
+
 function isInside(child: string, parent: string): boolean {
   const path = relative(parent, child);
   return path === "" || (path !== ".." && !path.startsWith(".." + sep) && !isAbsolute(path));
@@ -221,6 +261,7 @@ export async function createBus(options: BusOptions): Promise<Bus> {
   if (ignoreStats !== undefined && (!ignoreStats.isFile() || readText(stateIgnore) !== "*\n"))
     throw new StateError("STORE_TRACKS_LOCAL_FILES", `State folder .gitignore must be a file of "*", which keeps the folder out of git: ${stateIgnore}`);
   const bound = statOf(bindingFile) !== undefined;
+  if (bound) assertBoundTo(readBinding(bindingFile, profile), root, bindingFile);
   const storeRepository = await repositoryAt(store, clone);
   if (storeRepository === "not a repository") throw notRepository(store);
   // an existing area that is not the store is checked too and gets the exclude line; one without git is used as it is
