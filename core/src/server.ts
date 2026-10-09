@@ -1,6 +1,7 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import type { Bus } from "./bus.js";
+import { createBus, type Bus, type BusOptions } from "./bus.js";
 import { ProfileError } from "./profile.js";
 import { StateError } from "./storage.js";
 import { TOOL_DESCRIPTORS, invoke } from "./tools.js";
@@ -25,4 +26,19 @@ export function createServer(bus: Bus): Server {
     }
   });
   return server;
+}
+
+// A refused boot writes one line (the message of git can span several) and never opens stdio, so no call is ever accepted;
+// the process then ends on its own with exit code 1 (process.exit could cut the stderr line short on a pipe).
+export async function startServer(options: BusOptions): Promise<void> {
+  let bus: Bus;
+  try {
+    bus = await createBus(options);
+  } catch (error) {
+    const message = (error instanceof Error ? error.message : String(error)).replace(/\s*\n\s*/g, " ").trim();
+    process.stderr.write(`Server did not start: ${codeOf(error)}: ${message}\n`);
+    process.exitCode = 1;
+    return;
+  }
+  await createServer(bus).connect(new StdioServerTransport());
 }
