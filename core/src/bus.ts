@@ -1,9 +1,25 @@
-import { lstatSync, realpathSync, statSync, type Stats } from "node:fs";
+import {
+  appendFileSync,
+  closeSync,
+  fsyncSync,
+  linkSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+  type Stats,
+} from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { EventLog, type HarnessVersion } from "./events.js";
-import { readHarnessVersion } from "./git.js";
+import { readHarnessVersion, runGit } from "./git.js";
 import { BINDING_FILE_NAME, PROFILE_FILE_NAME, ProfileError, loadProfile } from "./profile.js";
-import { StateError, assertTrustedPath } from "./storage.js";
+import { StateError, assertTrustedPath, canonicalHash, readText, syncFolder } from "./storage.js";
 
 export interface BusOptions {
   projectRoot: string | undefined;
@@ -15,6 +31,27 @@ export interface BusOptions {
 export interface Bus {
   log: EventLog;
   version: HarnessVersion;
+}
+
+export interface ProjectBinding {
+  project_id: string;
+  project_root: string;
+  profile_path: string;
+  profile_hash: string;
+  created_at: string;
+}
+
+// The environment of git in the memory store: the user's own git and ssh configuration (credential helper, keys, agent), and
+// never a prompt, since the session has no terminal for it.
+// ponytail: GIT_SSH_COMMAND replaces the user's core.sshCommand; honor it when a setup needs it.
+export function storeGitEnv(home: string): Record<string, string> {
+  return {
+    PATH: process.env.PATH ?? "",
+    HOME: home,
+    GIT_TERMINAL_PROMPT: "0",
+    GIT_SSH_COMMAND: "ssh -o BatchMode=yes",
+    ...(process.env.SSH_AUTH_SOCK === undefined ? {} : { SSH_AUTH_SOCK: process.env.SSH_AUTH_SOCK }),
+  };
 }
 
 const isMissing = (error: unknown) => ["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "");
@@ -37,6 +74,99 @@ function resolveReal(path: string): string {
     current = dirname(current);
   }
   return join(realpathSync.native(current), ...missing);
+}
+
+// The top folder of a git repository, with its exclude file. A folder inside another repository (the user's project, a versioned
+// home) is not one: --show-toplevel answers with the repository above it. A linked worktree or a .git file keeps the git folder
+// elsewhere, and one in the harness clone would put the memory and the exclude line there.
+async function repositoryAt(folder: string, clone: string): Promise<{ excludeFile: string } | "absent" | "not a repository"> {
+  try {
+    if (!lstatSync(folder).isDirectory()) return "not a repository";
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "absent";
+    if ((error as NodeJS.ErrnoException).code === "ENOTDIR") return "not a repository";
+    throw error;
+  }
+  let gitFolder: string, excludeFile: string;
+  try {
+    let top: string;
+    [top, gitFolder, excludeFile] = (await runGit(folder, ["rev-parse", "--show-toplevel", "--absolute-git-dir", "--git-path", "info/exclude"])).split("\n");
+    if (realpathSync.native(top) !== folder) return "not a repository";
+  } catch {
+    return "not a repository";
+  }
+  excludeFile = resolve(folder, excludeFile);
+  for (const path of [gitFolder, excludeFile])
+    if (isInside(resolveReal(path), clone))
+      throw new StateError("PATH_INSIDE_HARNESS", `Git folder of ${folder} must not be the harness clone or inside it: ${path} (clone: ${clone})`);
+  return { excludeFile };
+}
+
+const notRepository = (folder: string) =>
+  new StateError("STORE_NOT_GIT", `Memory store exists and is not the top folder of a git repository: ${folder}`);
+
+// A repository made in a temporary folder beside its target and renamed into place, so a crash never leaves a target that
+// looks like a store.
+interface Prepared {
+  target: string;
+  temporary: string;
+  firstCreated: string | undefined;
+}
+
+async function prepareRepository(target: string, home: string): Promise<Prepared> {
+  const firstCreated = mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
+  const prepared = { target, temporary: mkdtempSync(join(dirname(target), `.${basename(target)}.partial-`)), firstCreated };
+  const { temporary } = prepared;
+  try {
+    // no template: no hooks and no sample files from this machine in the memory
+    await runGit(dirname(target), ["init", "--quiet", "--template=", "--", temporary], { env: storeGitEnv(home) });
+  } catch (error) {
+    discard(prepared);
+    throw error;
+  }
+  return prepared;
+}
+
+// Nothing once the temporary folder is in place; otherwise it goes, with the parents made for it.
+function discard(prepared: Prepared | undefined): void {
+  if (prepared === undefined || statOf(prepared.temporary) === undefined) return;
+  rmSync(prepared.temporary, { recursive: true, force: true });
+  if (prepared.firstCreated !== undefined) rmSync(prepared.firstCreated, { recursive: true, force: true });
+}
+
+function ensureExcluded(excludeFile: string, line: string): void {
+  let text = "";
+  try {
+    text = readFileSync(excludeFile, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  if (text.split("\n").includes(line)) return;
+  mkdirSync(dirname(excludeFile), { recursive: true, mode: 0o700 });
+  appendFileSync(excludeFile, (text === "" || text.endsWith("\n") ? "" : "\n") + line + "\n");
+}
+
+function writeBindingFile(file: string, binding: ProjectBinding): void {
+  const descriptor = openSync(file, "wx", 0o600);
+  try {
+    writeFileSync(descriptor, JSON.stringify(binding, null, 2) + "\n");
+    fsyncSync(descriptor);
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
+// Linked into an area that exists, never renamed over: an existing binding is never replaced. The file is written in a
+// temporary folder beside the area, outside its git, and the folder goes either way.
+function linkBinding(area: string, binding: ProjectBinding): void {
+  const temporary = mkdtempSync(join(dirname(area), `.${basename(area)}.partial-`));
+  try {
+    writeBindingFile(join(temporary, BINDING_FILE_NAME), binding);
+    linkSync(join(temporary, BINDING_FILE_NAME), join(area, BINDING_FILE_NAME));
+    syncFolder(area);
+  } finally {
+    rmSync(temporary, { recursive: true, force: true });
+  }
 }
 
 function isInside(child: string, parent: string): boolean {
@@ -84,5 +214,51 @@ export async function createBus(options: BusOptions): Promise<Bus> {
   for (let current = stateDir; current !== home && current !== dirname(current); current = dirname(current))
     if (statOf(current)?.isDirectory() === false)
       throw new StateError("STATE_DIR_INVALID", `State directory or a folder above it is not a folder: ${current}`);
+  // a .gitignore already in the state folder (a crash between creating and writing it leaves it empty) must still keep the whole
+  // folder out of git
+  const stateIgnore = join(stateDir, ".gitignore");
+  const ignoreStats = statOf(stateIgnore);
+  if (ignoreStats !== undefined && (!ignoreStats.isFile() || readText(stateIgnore) !== "*\n"))
+    throw new StateError("STORE_TRACKS_LOCAL_FILES", `State folder .gitignore must be a file of "*", which keeps the folder out of git: ${stateIgnore}`);
+  const bound = statOf(bindingFile) !== undefined;
+  const storeRepository = await repositoryAt(store, clone);
+  if (storeRepository === "not a repository") throw notRepository(store);
+  // an existing area that is not the store is checked too and gets the exclude line; one without git is used as it is
+  let areaRepository = store === area ? storeRepository : await repositoryAt(area, clone);
+
+  // only from here on is anything written. The repositories are made in temporary folders, and the binding claims the area
+  // (inside the area put in place, or linked into one that exists) before the store is put in place or the state folder is made
+  const binding: ProjectBinding = {
+    project_id: profile.project_id,
+    project_root: root,
+    profile_path: join(root, PROFILE_FILE_NAME),
+    profile_hash: canonicalHash(profile),
+    created_at: new Date().toISOString(),
+  };
+  let storeMade: Prepared | undefined;
+  let areaMade: Prepared | undefined;
+  try {
+    if (store !== area && storeRepository === "absent") storeMade = await prepareRepository(store, home);
+    if (areaRepository === "absent") {
+      areaMade = await prepareRepository(area, home);
+      ensureExcluded(join(areaMade.temporary, ".git", "info", "exclude"), `/${BINDING_FILE_NAME}`);
+      writeBindingFile(join(areaMade.temporary, BINDING_FILE_NAME), binding);
+      renameSync(areaMade.temporary, area);
+      // made here by git init or git clone, so its git folder is .git: git is not asked again once the area is in place
+      areaRepository = { excludeFile: join(area, ".git", "info", "exclude") };
+    } else if (!bound) linkBinding(area, binding);
+    if (typeof areaRepository === "object") ensureExcluded(areaRepository.excludeFile, `/${BINDING_FILE_NAME}`);
+    if (storeMade !== undefined) renameSync(storeMade.temporary, store);
+  } finally {
+    discard(storeMade);
+    discard(areaMade);
+  }
+  mkdirSync(stateDir, { recursive: true, mode: 0o700 });
+  try {
+    // "*" keeps the whole state folder, this file included, out of the git of the area wherever state_dir puts it
+    writeFileSync(join(stateDir, ".gitignore"), "*\n", { flag: "wx", mode: 0o600 });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+  }
   return { log: new EventLog(stateDir, profile, version), version };
 }
