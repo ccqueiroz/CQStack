@@ -19,6 +19,7 @@ import {
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { EventLog, type HarnessVersion } from "./events.js";
 import { readHarnessVersion, runGit } from "./git.js";
+import { redact } from "./observation.js";
 import { BINDING_FILE_NAME, PROFILE_FILE_NAME, ProfileError, loadProfile, type ProjectProfile } from "./profile.js";
 import { ID_PATTERN, StateError, assertTrustedPath, canonicalHash, readText, syncFolder } from "./storage.js";
 
@@ -117,24 +118,78 @@ async function repositoryAt(folder: string, clone: string): Promise<{ excludeFil
   return { excludeFile };
 }
 
+// Only https and ssh, even when the user's configuration allows ext or fd: -c on the command line wins over every config file.
+// A transport the user allows by name (protocol.<name>.allow) still passes protocol.allow=never; that configuration is trusted.
+const PROTOCOL_FLAGS = [
+  "-c", "protocol.allow=never",
+  "-c", "protocol.https.allow=always",
+  "-c", "protocol.ssh.allow=always",
+  "-c", "protocol.ext.allow=never",
+  "-c", "protocol.fd.allow=never",
+];
+const URL_CREDENTIAL = /([a-z][a-z0-9+.-]*:\/\/)[^\s/]+@/gi;
+
+// A credential in a URL of git's output (a rewrite in the user's own configuration can put one there) goes first, up to the
+// last "@" of the authority, then the redaction of the observation cuts at the first secret word; the cut to 2000 characters
+// comes last, so it never splits a credential away from its pattern.
+function cloneFailure(error: unknown, timeoutMs: number): string {
+  const { killed, stderr } = error as { killed?: boolean; stderr?: unknown };
+  if (killed === true) return `timed out after ${timeoutMs} ms`;
+  return redact(String(stderr ?? "").replace(URL_CREDENTIAL, "$1[REDACTED]@")).slice(0, 2000);
+}
+
+// project.json and the state folder live in the local area and must stay out of its git: a store that is the area and tracks
+// them (or a file where the state folder goes) would show them in git, and a tracked project.json would bring another machine's
+// root. A .gitignore of the memory that un-ignores project.json ("!project.json", "!*.json") would win over .git/info/exclude;
+// the state folder needs no such check, since its own .gitignore of "*" is the deepest one and wins over any pattern above it.
+// Paths are compared without case, as a disk without case reads them: there a tracked "State/x" is in the state folder.
+async function assertLocalFilesOutOfGit(folder: string, stateRel: string, store: string): Promise<void> {
+  const local = stateRel.toLowerCase();
+  const prefixes = local.split("/").map((_, index, segments) => segments.slice(0, index + 1).join("/"));
+  const pathspecs = [BINDING_FILE_NAME, ...prefixes].map((path) => `:(literal,icase)${path}`);
+  const tracked = (await runGit(folder, ["ls-files", "-z", "--", ...pathspecs])).toLowerCase().split("\0");
+  // exit 1 is "no pattern matches project.json"; the matching pattern comes back as <source>:<line>:<pattern><TAB><path>
+  const matched = await runGit(folder, ["check-ignore", "--verbose", "--non-matching", "--", BINDING_FILE_NAME]).catch((error: { code?: unknown }) => {
+    if (error.code === 1) return "";
+    throw error;
+  });
+  const unignored = matched.split("\t")[0].split(":").slice(2).join(":").startsWith("!");
+  if (unignored || tracked.some((path) => path === BINDING_FILE_NAME || path === local || path.startsWith(local + "/") || local.startsWith(path + "/")))
+    throw new StateError(
+      "STORE_TRACKS_LOCAL_FILES",
+      `Memory store tracks or un-ignores project.json or the state folder, which must stay out of its git: ${store}`,
+    );
+}
+
 const notRepository = (folder: string) =>
   new StateError("STORE_NOT_GIT", `Memory store exists and is not the top folder of a git repository: ${folder}`);
 
-// A repository made in a temporary folder beside its target and renamed into place, so a crash never leaves a target that
-// looks like a store.
+// A repository made in a temporary folder beside its target and renamed into place, so a failed or interrupted clone never
+// leaves a target that looks like a store. stateRel is given when the target is the local area, whose clone must not track
+// the local files.
 interface Prepared {
   target: string;
   temporary: string;
   firstCreated: string | undefined;
 }
 
-async function prepareRepository(target: string, home: string): Promise<Prepared> {
+async function prepareRepository(target: string, home: string, clone?: { remote: string; timeoutMs: number; stateRel?: string }): Promise<Prepared> {
   const firstCreated = mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
   const prepared = { target, temporary: mkdtempSync(join(dirname(target), `.${basename(target)}.partial-`)), firstCreated };
   const { temporary } = prepared;
   try {
     // no template: no hooks and no sample files from this machine in the memory
-    await runGit(dirname(target), ["init", "--quiet", "--template=", "--", temporary], { env: storeGitEnv(home) });
+    if (clone === undefined)
+      await runGit(dirname(target), ["init", "--quiet", "--template=", "--", temporary], { env: storeGitEnv(home) });
+    else {
+      await runGit(dirname(target), [...PROTOCOL_FLAGS, "clone", "--quiet", "--template=", "--", clone.remote, temporary], {
+        env: storeGitEnv(home),
+        timeoutMs: clone.timeoutMs,
+      }).catch((error: unknown) => {
+        throw new StateError("STORE_CLONE_FAILED", `Memory remote could not be cloned into ${target}: ${cloneFailure(error, clone.timeoutMs)}`);
+      });
+      if (clone.stateRel !== undefined) await assertLocalFilesOutOfGit(temporary, clone.stateRel, target);
+    }
   } catch (error) {
     discard(prepared);
     throw error;
@@ -214,6 +269,22 @@ function isInside(child: string, parent: string): boolean {
   return path === "" || (path !== ".." && !path.startsWith(".." + sep) && !isAbsolute(path));
 }
 
+// No link and no folder open to others on the way to the state folder and the binding, no file where a folder goes, and a
+// .gitignore already in the state folder (a crash between creating and writing it leaves it empty) that keeps the whole folder
+// out of git.
+function assertStatePath(stateDir: string, bindingFile: string, home: string): void {
+  assertTrustedPath(stateDir);
+  assertTrustedPath(bindingFile);
+  // the loader keeps stateDir inside the area; the root check only stops the walk if that ever breaks
+  for (let current = stateDir; current !== home && current !== dirname(current); current = dirname(current))
+    if (statOf(current)?.isDirectory() === false)
+      throw new StateError("STATE_DIR_INVALID", `State directory or a folder above it is not a folder: ${current}`);
+  const stateIgnore = join(stateDir, ".gitignore");
+  const ignoreStats = statOf(stateIgnore);
+  if (ignoreStats !== undefined && (!ignoreStats.isFile() || readText(stateIgnore) !== "*\n"))
+    throw new StateError("STORE_TRACKS_LOCAL_FILES", `State folder .gitignore must be a file of "*", which keeps the folder out of git: ${stateIgnore}`);
+}
+
 // The profile is read at the real root, which the binding records: join() drops "link/.." as text, while the disk resolves it
 // through the link. A root the disk cannot resolve gets the codes the loader gives a profile it cannot read; a root that is not
 // an absolute text is left to the loader, which refuses it.
@@ -248,27 +319,20 @@ export async function createBus(options: BusOptions): Promise<Bus> {
       throw new StateError("PATH_INSIDE_HARNESS", `${label} must not be the harness clone or inside it: ${path} (clone: ${clone})`);
   if (store !== area && (isInside(store, area) || isInside(area, store)))
     throw new StateError("STORE_PATH_INVALID", `Memory store must not be inside the local area or contain it: ${store}`);
-  assertTrustedPath(stateDir);
-  assertTrustedPath(bindingFile);
-  // the loader keeps stateDir inside the area; the root check only stops the walk if that ever breaks
-  for (let current = stateDir; current !== home && current !== dirname(current); current = dirname(current))
-    if (statOf(current)?.isDirectory() === false)
-      throw new StateError("STATE_DIR_INVALID", `State directory or a folder above it is not a folder: ${current}`);
-  // a .gitignore already in the state folder (a crash between creating and writing it leaves it empty) must still keep the whole
-  // folder out of git
-  const stateIgnore = join(stateDir, ".gitignore");
-  const ignoreStats = statOf(stateIgnore);
-  if (ignoreStats !== undefined && (!ignoreStats.isFile() || readText(stateIgnore) !== "*\n"))
-    throw new StateError("STORE_TRACKS_LOCAL_FILES", `State folder .gitignore must be a file of "*", which keeps the folder out of git: ${stateIgnore}`);
+  assertStatePath(stateDir, bindingFile, home);
   const bound = statOf(bindingFile) !== undefined;
   if (bound) assertBoundTo(readBinding(bindingFile, profile), root, bindingFile);
   const storeRepository = await repositoryAt(store, clone);
   if (storeRepository === "not a repository") throw notRepository(store);
   // an existing area that is not the store is checked too and gets the exclude line; one without git is used as it is
   let areaRepository = store === area ? storeRepository : await repositoryAt(area, clone);
+  const stateRel = relative(area, stateDir);
+  if (store === area && storeRepository !== "absent") await assertLocalFilesOutOfGit(store, stateRel, store);
 
   // only from here on is anything written. The repositories are made in temporary folders, and the binding claims the area
   // (inside the area put in place, or linked into one that exists) before the store is put in place or the state folder is made
+  const { remote } = profile.knowledge_store;
+  const cloneOptions = remote === undefined ? undefined : { remote, timeoutMs: options.cloneTimeoutMs ?? 120_000 };
   const binding: ProjectBinding = {
     project_id: profile.project_id,
     project_root: root,
@@ -279,11 +343,14 @@ export async function createBus(options: BusOptions): Promise<Bus> {
   let storeMade: Prepared | undefined;
   let areaMade: Prepared | undefined;
   try {
-    if (store !== area && storeRepository === "absent") storeMade = await prepareRepository(store, home);
+    if (store !== area && storeRepository === "absent") storeMade = await prepareRepository(store, home, cloneOptions);
     if (areaRepository === "absent") {
-      areaMade = await prepareRepository(area, home);
+      areaMade = await prepareRepository(area, home, store === area && cloneOptions !== undefined ? { ...cloneOptions, stateRel } : undefined);
       ensureExcluded(join(areaMade.temporary, ".git", "info", "exclude"), `/${BINDING_FILE_NAME}`);
       writeBindingFile(join(areaMade.temporary, BINDING_FILE_NAME), binding);
+      // checked in the temporary folder, as the clone made it (its folders follow the umask): once the area is in place, a
+      // refusal would leave it behind
+      assertStatePath(join(areaMade.temporary, stateRel), join(areaMade.temporary, BINDING_FILE_NAME), home);
       renameSync(areaMade.temporary, area);
       // made here by git init or git clone, so its git folder is .git: git is not asked again once the area is in place
       areaRepository = { excludeFile: join(area, ".git", "info", "exclude") };

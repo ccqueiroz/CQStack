@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { StateError, canonicalHash, type StateErrorCode } from "../src/storage.js";
 import { buildGraph, type RootState, type Track } from "../src/graph.js";
 import { EventLog, type Actor, type Event, type HarnessVersion } from "../src/events.js";
@@ -84,6 +84,32 @@ export function fakeClone(tag: string | null = "v7.7.7", cloneRoot = temporaryDi
   gitIn(cloneRoot, "commit", "--allow-empty", "--quiet", "-m", "clone");
   if (tag !== null) gitIn(cloneRoot, "tag", tag);
   return { cloneRoot, version: { tag, commit: gitIn(cloneRoot, "rev-parse", "HEAD").trim() } };
+}
+
+// A home folder whose git configuration rewrites https://example.invalid/ to the bare repositories under <home>/remotes and allows
+// the file transport, so no clone test reaches the network (.invalid never resolves); the code under test does not know this file.
+export function testHome(extraConfig = ""): string {
+  const home = temporaryDirectory();
+  mkdirSync(join(home, "remotes"));
+  writeFileSync(
+    join(home, ".gitconfig"),
+    `[url "${join(home, "remotes")}/"]\n\tinsteadOf = https://example.invalid/\n[protocol "file"]\n\tallow = always\n${extraConfig}`,
+  );
+  return home;
+}
+
+// <home>/remotes/<name>.git, a bare repository with one commit holding files; returns the commit
+export function bareRemote(home: string, name: string, files: Record<string, string> = { "memory.md": "remote\n" }): string {
+  const work = temporaryDirectory();
+  gitIn(work, "init", "--quiet");
+  for (const [path, content] of Object.entries(files)) {
+    mkdirSync(dirname(join(work, path)), { recursive: true });
+    writeFileSync(join(work, path), content);
+  }
+  gitIn(work, "add", "--all");
+  gitIn(work, "commit", "--quiet", "-m", "remote");
+  gitIn(work, "clone", "--quiet", "--bare", work, join(home, "remotes", `${name}.git`));
+  return gitIn(work, "rev-parse", "HEAD").trim();
 }
 
 // every entry under directory without following links: folders by path, files also by size, mtime and sha256, links by target
