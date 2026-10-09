@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { appendFileSync, existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { inspect } from "node:util";
 import { createBus, type Bus } from "../src/bus.js";
@@ -8,6 +8,10 @@ import type { Actor, Event, HarnessVersion, RootView } from "../src/events.js";
 import { buildGraph } from "../src/graph.js";
 import { canonicalHash } from "../src/storage.js";
 import { TOOL_DESCRIPTORS, invoke } from "../src/tools.js";
+import { SERVER_NAME, createServer } from "../src/server.js";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { ADA, expectStateError, fakeClone, handLog, temporaryDirectory, writeLog, writeProject } from "./helpers.js";
 
 interface ToolBus {
@@ -205,4 +209,89 @@ test("[TOOL-11] task_events of a missing, truncated or invalid root returns the 
   mismatched[1].graph_hash = "b".repeat(64);
   writeLog(stateDir, "r5", mismatched);
   expectStateError(() => invoke(bus, "task_events", { root_id: "r5" }), "GRAPH_MISMATCH");
+});
+
+async function connected(bus: Bus): Promise<Client> {
+  const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+  await createServer(bus).connect(serverSide);
+  const client = new Client({ name: "test-client", version: "0.0.0" });
+  await client.connect(clientSide);
+  return client;
+}
+
+// a tools/call sent as given, so arguments can be absent or not an object; a JSON-RPC error comes back as { rejected }
+async function call(client: Client, params: Record<string, unknown>): Promise<{ isError?: boolean; payload?: any; rejected?: string }> {
+  try {
+    const result = await client.request({ method: "tools/call", params } as never, CallToolResultSchema);
+    const [content] = result.content as Array<{ type: string; text: string }>;
+    return { ...(result.isError === undefined ? {} : { isError: result.isError }), payload: JSON.parse(content.text) };
+  } catch (error) {
+    return { rejected: String(error) };
+  }
+}
+
+test("[TOOL-01] [SRV-03] the server announces the neutral name and the clone version, and lists exactly the three tools", async () => {
+  const { bus, version } = await toolBus();
+  assert.equal(SERVER_NAME, "cqstack");
+  const client = await connected(bus);
+  assert.deepEqual(client.getServerVersion(), { name: "cqstack", version: version.tag });
+  const listed = await client.listTools().catch((error: unknown) => ({ tools: String(error) }));
+  assert.deepEqual(listed.tools, TOOL_DESCRIPTORS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })));
+  const offTag = await connected({ log: bus.log, version: { tag: null, commit: version.commit } });
+  assert.deepEqual(offTag.getServerVersion(), { name: "cqstack", version: version.commit });
+});
+
+test("[TOOL-12] [TOOL-13] a refused call comes back with isError and the code in JSON text, and the next call is served", async () => {
+  const { bus } = await toolBus();
+  const client = await connected(bus);
+  const refusals: Array<[params: Record<string, unknown>, code: string]> = [
+    [{ name: "task_get", arguments: { root_id: "r1" } }, "TOOL_UNKNOWN"],
+    [{ name: "task_init", arguments: { root_id: "R1", actor: ADA } }, "TOOL_ARGUMENTS_INVALID"],
+    [{ name: "task_init" }, "TOOL_ARGUMENTS_INVALID"],
+    [{ name: "task_init", arguments: { root_id: "r1" } }, "ACTOR_REQUIRED"],
+    [{ name: "task_events", arguments: { root_id: "r9" } }, "ROOT_NOT_FOUND"],
+  ];
+  for (const [params, code] of refusals) {
+    const refused = await call(client, params);
+    assert.equal(refused.isError, true, JSON.stringify(params));
+    assert.equal(refused.payload.code, code, JSON.stringify(params));
+    assert.equal(typeof refused.payload.message, "string");
+    const served = await call(client, { name: "task_events", arguments: { root_id: "r0" } });
+    assert.equal(served.payload?.code, "ROOT_NOT_FOUND");
+  }
+  const opened = await call(client, { name: "task_init", arguments: { root_id: "r1", track: "S", actor: ADA } });
+  assert.equal(opened.isError, undefined);
+  assert.deepEqual(opened.payload.event, bus.log.events("r1")[0]);
+  assert.deepEqual(opened.payload.view, bus.log.state("r1"));
+  const again = await call(client, { name: "task_init", arguments: { root_id: "r1", actor: ADA } });
+  assert.deepEqual([again.isError, again.payload.code], [true, "ROOT_EXISTS"]);
+  const read = await call(client, { name: "task_events", arguments: { root_id: "r1" } });
+  assert.deepEqual(read.payload, { events: bus.log.events("r1"), view: bus.log.state("r1") });
+});
+
+test("[TOOL-14] arguments that are not an object get the JSON-RPC error of the SDK before the handler, write nothing, and the next call is served", async () => {
+  const { bus, stateDir } = await toolBus();
+  const client = await connected(bus);
+  for (const args of [[], null, "x", 1, [{ root_id: "r1", actor: ADA }]]) {
+    const outcome = await call(client, { name: "task_init", arguments: args });
+    assert.ok(outcome.rejected !== undefined && outcome.payload === undefined, JSON.stringify(args));
+    const served = await call(client, { name: "task_events", arguments: { root_id: "r0" } });
+    assert.equal(served.payload?.code, "ROOT_NOT_FOUND");
+  }
+  assert.deepEqual(readdirSync(stateDir), [".gitignore"]);
+});
+
+test("[TOOL-12] [TOOL-13] an unexpected error in a tool comes back as UNEXPECTED_ERROR and the server stays up", { skip: process.getuid?.() === 0 && "root reads any folder" }, async () => {
+  const { bus, stateDir } = await toolBus();
+  const client = await connected(bus);
+  init(bus);
+  chmodSync(stateDir, 0o000);
+  try {
+    const failed = await call(client, { name: "task_events", arguments: { root_id: "r1" } });
+    assert.deepEqual([failed.isError, failed.payload?.code], [true, "UNEXPECTED_ERROR"]);
+  } finally {
+    chmodSync(stateDir, 0o700);
+  }
+  const served = await call(client, { name: "task_events", arguments: { root_id: "r1" } });
+  assert.equal(served.payload?.events?.length, 1);
 });
