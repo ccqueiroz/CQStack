@@ -22,7 +22,17 @@ export type StateErrorCode =
   | "EVENT_SCHEMA_VIOLATION"
   | "OBSERVATION_ATTRIBUTION_INVALID"
   | "OBSERVATION_INPUT_INVALID"
-  | "HARNESS_VERSION_UNAVAILABLE";
+  | "HARNESS_VERSION_UNAVAILABLE"
+  | "HOME_INVALID"
+  | "PATH_INSIDE_HARNESS"
+  | "STORE_PATH_INVALID"
+  | "STORE_NOT_GIT"
+  | "STORE_CLONE_FAILED"
+  | "STORE_TRACKS_LOCAL_FILES"
+  | "BINDING_INVALID"
+  | "BINDING_ROOT_MISMATCH"
+  | "TOOL_UNKNOWN"
+  | "TOOL_ARGUMENTS_INVALID";
 
 // Ids become file names: lowercase only, so two ids never share a file on a case-insensitive disk.
 export const ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/;
