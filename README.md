@@ -191,7 +191,9 @@ npm run cli -- task show DEMO-1
 2. Register `node dist/mcp/server.js` as a stdio server in your MCP host configuration.
 3. Reload the host.
 
-The MCP tools mirror the CLI and default to dry-run.
+The MCP server exposes `task_init`, `task_state` and `task_events`.
+
+**Project memory is local by default.** CQStack keeps each project's memory (delivery history, roadmap, cost ledger and approved knowledge) in `~/.cqstack/projects/<project_id>/` on your machine. Nothing is sent anywhere, and nothing is committed to the CQStack repository. If you switch machines or delete that directory, the memory is lost. To keep it, create a private repository and set it as the memory remote in the project profile; CQStack then pushes every memory update there and restores it when the project is opened on a new machine.
 
 **Prerequisites for real execution.**
 

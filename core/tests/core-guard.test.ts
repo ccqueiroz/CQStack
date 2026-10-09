@@ -301,3 +301,9 @@ test("[BOOT-04] [BOOT-07] only mcp/server.ts reads CLAUDE_PROJECT_DIR, the home 
   const entry = readFileSync(join(REPOSITORY_ROOT, "mcp", "server.ts"), "utf8");
   assert.deepEqual(reads.filter((read) => entry.includes(read)), ["CLAUDE_PROJECT_DIR", "homedir", "import.meta"]);
 });
+
+test("[MEMDOC-01] the README carries the local memory notice of the artifact, word for word, as one paragraph", () => {
+  const notice =
+    "**Project memory is local by default.** CQStack keeps each project's memory (delivery history, roadmap, cost ledger and approved knowledge) in `~/.cqstack/projects/<project_id>/` on your machine. Nothing is sent anywhere, and nothing is committed to the CQStack repository. If you switch machines or delete that directory, the memory is lost. To keep it, create a private repository and set it as the memory remote in the project profile; CQStack then pushes every memory update there and restores it when the project is opened on a new machine.";
+  assert.ok(readFileSync(join(REPOSITORY_ROOT, "README.md"), "utf8").split("\n").includes(notice));
+});
