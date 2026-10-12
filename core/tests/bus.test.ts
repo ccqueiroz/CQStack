@@ -756,6 +756,7 @@ test("[STATE-04] [E6] a remote or an existing store that tracks project.json or 
   const { cloneRoot } = fakeClone();
   const refused: Array<[state_dir: string | undefined, files: Record<string, string>]> = [
     [undefined, { "project.json": "{}" }],
+    [undefined, { "project.json/x": "x" }],
     [undefined, { "state/x": "x" }],
     [undefined, { state: "x" }],
     ["runs/x", { runs: "x" }],
@@ -765,6 +766,7 @@ test("[STATE-04] [E6] a remote or an existing store that tracks project.json or 
     [undefined, { ".gitignore": "!*.json\n" }],
     // without case, as a disk without case reads them
     [undefined, { "Project.json": "{}" }],
+    [undefined, { "Project.json/x": "x" }],
     [undefined, { "State/x": "x" }],
     ["runs/x", { RUNS: "x" }],
     ["Runs/x", { runs: "x" }],
@@ -789,6 +791,20 @@ test("[STATE-04] [E6] a remote or an existing store that tracks project.json or 
     gitIn(areaOf(existing), "commit", "--quiet", "-m", "tracked");
     await expectRefusedUnchanged({ projectRoot, cloneRoot, homeDir: existing }, "STORE_TRACKS_LOCAL_FILES", [existing], `existing ${tracked}`);
   }
+  // a project.json folder tracked by the area, with the binding file back in its place on disk
+  const folderHome = temporaryDirectory();
+  const folderRoot = writeProject();
+  await createBus({ projectRoot: folderRoot, cloneRoot, homeDir: folderHome });
+  const bindingFile = join(areaOf(folderHome), "project.json");
+  const bindingText = readFileSync(bindingFile);
+  rmSync(bindingFile);
+  mkdirSync(bindingFile);
+  writeFileSync(join(bindingFile, "x"), "x");
+  gitIn(areaOf(folderHome), "add", "--force", "project.json/x");
+  gitIn(areaOf(folderHome), "commit", "--quiet", "-m", "tracked");
+  rmSync(bindingFile, { recursive: true });
+  writeFileSync(bindingFile, bindingText);
+  await expectRefusedUnchanged({ projectRoot: folderRoot, cloneRoot, homeDir: folderHome }, "STORE_TRACKS_LOCAL_FILES", [folderHome], "existing project.json/x");
   // a check-ignore that fails for another reason than "no match" stops the boot, never reads as "not un-ignored"
   const failing = temporaryDirectory();
   const failingRoot = writeProject();

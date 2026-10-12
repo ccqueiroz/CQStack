@@ -155,7 +155,8 @@ async function assertLocalFilesOutOfGit(folder: string, stateRel: string, store:
     throw error;
   });
   const unignored = matched.split("\t")[0].split(":").slice(2).join(":").startsWith("!");
-  if (unignored || tracked.some((path) => path === BINDING_FILE_NAME || path === local || path.startsWith(local + "/") || local.startsWith(path + "/")))
+  const isOrUnder = (path: string, top: string) => path === top || path.startsWith(top + "/");
+  if (unignored || tracked.some((path) => isOrUnder(path, BINDING_FILE_NAME) || isOrUnder(path, local) || local.startsWith(path + "/")))
     throw new StateError(
       "STORE_TRACKS_LOCAL_FILES",
       `Memory store tracks or un-ignores project.json or the state folder, which must stay out of its git: ${store}`,
