@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { execFileSync, spawn } from "node:child_process";
 import { Worker } from "node:worker_threads";
 import { createBus, type BusOptions } from "../src/bus.js";
@@ -388,22 +388,35 @@ test("[AREA-04] [AREA-10] with a declared path, a local area that exists without
   assert.deepEqual(readdirSync(areaOf(home)).sort(), ["notes.md", "project.json", "state"]);
 });
 
-test("[AREA-09] [E2] a declared path through a symbolic link is followed, and one that resolves to the local area makes the area the store", async () => {
+test("[AREA-09] [E2] [BOOT-08] a declared path through a symbolic link is followed inside the project root, and one that leads outside it is refused with STORE_PATH_INVALID and creates nothing", async () => {
   const { cloneRoot } = fakeClone();
-  const outside = temporaryDirectory();
-  const linked = writeProject({ path: "link/memory" });
-  symlinkSync(outside, join(linked, "link"));
-  await createBus({ projectRoot: linked, cloneRoot, homeDir: temporaryDirectory() });
-  assert.equal(existsSync(join(outside, "memory", ".git")), true);
-  assert.equal(repositoryTop(join(outside, "memory")), join(outside, "memory"));
+  const inside = writeProject({ path: "link/memory" });
+  mkdirSync(join(inside, "real"));
+  symlinkSync(join(inside, "real"), join(inside, "link"));
+  await createBus({ projectRoot: inside, cloneRoot, homeDir: temporaryDirectory() });
+  assert.equal(existsSync(join(inside, "real", "memory", ".git")), true);
+  assert.equal(repositoryTop(join(inside, "real", "memory")), join(inside, "real", "memory"));
   const home = temporaryDirectory();
   storeWithCommit(areaOf(home));
-  const toArea = writeProject({ path: "memory" });
-  symlinkSync(areaOf(home), join(toArea, "memory"));
-  const bus = await createBus({ projectRoot: toArea, cloneRoot, homeDir: home });
-  bus.log.create("r1", { graph: buildGraph("L"), actor: ADA });
-  assert.equal(existsSync(join(areaOf(home), "project.json")), true);
-  assert.equal(gitView(areaOf(home)), "memory.md\n");
+  const outside = temporaryDirectory();
+  storeWithCommit(join(outside, "repository"));
+  const cases: Array<[label: string, path: string, link: string, target: (projectRoot: string) => string]> = [
+    ["link to a folder outside, store absent", "link/memory", "link", () => outside],
+    ["link to a repository outside", "memory", "memory", () => join(outside, "repository")],
+    ["link to the local area", "memory", "memory", () => areaOf(home)],
+    ["relative link to a folder outside", "up/memory", "up", (projectRoot) => relative(projectRoot, outside)],
+  ];
+  const roots = cases.map(([, path, link, target]) => {
+    const projectRoot = writeProject({ path });
+    symlinkSync(target(projectRoot), join(projectRoot, link));
+    return projectRoot;
+  });
+  await withGitShim(async (calls) => {
+    for (const [index, [label]] of cases.entries())
+      await expectRefusedUnchanged({ projectRoot: roots[index], cloneRoot, homeDir: home }, "STORE_PATH_INVALID", [home, outside, roots[index], cloneRoot], label);
+    // only the two reads of the harness version ran: no git process in the store or the area
+    assert.deepEqual(calls().map((call) => call.args.slice(0, 2).join(" ")), cases.flatMap(() => ["rev-parse HEAD", "tag --points-at"]));
+  });
 });
 
 test("[BOOT-07] the bus takes the project root from its argument, never from CLAUDE_PROJECT_DIR", async () => {

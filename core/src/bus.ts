@@ -347,6 +347,9 @@ export async function createBus(options: BusOptions): Promise<Bus> {
       throw new StateError("PATH_INSIDE_HARNESS", `${label} must not be the harness clone or inside it: ${path} (clone: ${clone})`);
   if (store !== area && (isInside(store, area) || isInside(area, store)))
     throw new StateError("STORE_PATH_INVALID", `Memory store must not be inside the local area or contain it: ${store}`);
+  // the profile path is relative and has no "..": a link on it must not take the store out of the project either
+  if (profile.knowledge_store.path !== undefined && !isInside(store, root))
+    throw new StateError("STORE_PATH_INVALID", `Memory store must stay inside the project root once links are followed: ${store} (root: ${root})`);
   assertStatePath(stateDir, bindingFile, home);
   let bound = statOf(bindingFile) !== undefined;
   if (bound) assertBoundTo(readBinding(bindingFile, profile), root, bindingFile);
