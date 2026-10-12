@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
+import { createBus, type BusOptions } from "../src/bus.js";
 import { StateError, canonicalHash, type StateErrorCode } from "../src/storage.js";
 import { buildGraph, type RootState, type Track } from "../src/graph.js";
 import { EventLog, type Actor, type Event, type HarnessVersion } from "../src/events.js";
@@ -128,18 +129,22 @@ export function snapshot(directory: string): string[] {
   return entries;
 }
 
-// a git on PATH that records the arguments and the environment of each call in log, one JSON line each, then runs the real git
-export async function withGitShim<T>(action: (calls: () => Array<{ args: string[]; env: Record<string, string> }>) => Promise<T>): Promise<T> {
+// A git on PATH that records the arguments and the environment of each call in log, one JSON line each, runs the JavaScript
+// given in before (with fs and the arguments in args), then hands the call to the git found on PATH before it.
+export async function withGitShim<T>(
+  action: (calls: () => Array<{ args: string[]; env: Record<string, string> }>) => Promise<T>,
+  before = "",
+): Promise<T> {
   const directory = temporaryDirectory();
   const log = join(directory, "calls.jsonl");
   const realGit = execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).trim();
   writeFileSync(
     join(directory, "git"),
     `#!${process.execPath}\n` +
-      `const { appendFileSync } = require("node:fs"); const { spawnSync } = require("node:child_process");\n` +
-      `appendFileSync(${JSON.stringify(log)}, JSON.stringify({ args: process.argv.slice(2), env: process.env }) + "\\n");\n` +
-      `const result = spawnSync(${JSON.stringify(realGit)}, process.argv.slice(2), { stdio: "inherit" });\n` +
-      `process.exit(result.status ?? 1);\n`,
+      `const fs = require("node:fs"); const args = process.argv.slice(2);\n` +
+      `fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({ args, env: process.env }) + "\\n");\n` +
+      `${before}\n` +
+      `process.exit(require("node:child_process").spawnSync(${JSON.stringify(realGit)}, args, { stdio: "inherit" }).status ?? 1);\n`,
     { mode: 0o755 },
   );
   const calls = () =>
@@ -151,6 +156,34 @@ export async function withGitShim<T>(action: (calls: () => Array<{ args: string[
   } finally {
     process.env.PATH = originalPath;
   }
+}
+
+export const areaOf = (home: string, projectId = "acme-toy") => join(home, ".cqstack", "projects", projectId);
+
+// a refused boot leaves every given folder as it was: no new entry, every file byte for byte and with the same mtime
+export async function expectRefusedUnchanged(options: BusOptions, code: StateErrorCode | ProfileErrorCode, folders: string[], label = ""): Promise<void> {
+  const before = folders.map(snapshot);
+  await expectRejection(createBus(options), code, label);
+  assert.deepEqual(folders.map(snapshot), before, `${code} ${label}`);
+}
+export const repositoryTop = (folder: string) => gitIn(folder, "rev-parse", "--show-toplevel").trim();
+export const hasCommit = (folder: string) => {
+  try {
+    gitIn(folder, "rev-parse", "--verify", "--quiet", "HEAD");
+    return true;
+  } catch {
+    return false;
+  }
+};
+export const gitView = (folder: string) => gitIn(folder, "status", "--porcelain", "--untracked-files=all") + gitIn(folder, "ls-files");
+export const bindingOf = (home: string) => JSON.parse(readFileSync(join(areaOf(home), "project.json"), "utf8"));
+// a store made by hand, with one commit, as memory restored without the harness
+export function storeWithCommit(folder: string): void {
+  mkdirSync(folder, { recursive: true });
+  gitIn(folder, "init", "--quiet");
+  writeFileSync(join(folder, "memory.md"), "kept\n");
+  gitIn(folder, "add", "memory.md");
+  gitIn(folder, "commit", "--quiet", "-m", "memory");
 }
 
 export function withCwd(directory: string, action: () => void): void {
