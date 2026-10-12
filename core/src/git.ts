@@ -6,15 +6,19 @@ import { StateError } from "./storage.js";
 
 const execFileAsync = promisify(execFile);
 
-// No shell, a minimal explicit env (without HOME, git skips the user's global config), a mandatory timeout and an
-// output ceiling; exit != 0, timeout or output over the ceiling reject (decision 48).
+// No shell, a minimal explicit env (without HOME, git skips the user's global config) unless the caller gives one, a mandatory
+// timeout and an output ceiling; exit != 0, timeout or output over the ceiling reject (decision 48).
 // ponytail: execFile stands in for runProcess until F1.1; without a process group a grandchild of git would outlive
 // the timeout. F1.1 moves this helper onto runProcess with the same signature.
-export async function runGit(cwd: string, args: readonly string[]): Promise<string> {
+export async function runGit(
+  cwd: string,
+  args: readonly string[],
+  options: { env?: Record<string, string>; timeoutMs?: number } = {},
+): Promise<string> {
   const { stdout } = await execFileAsync("git", [...args], {
     cwd,
-    env: { PATH: process.env.PATH ?? "" },
-    timeout: 10_000,
+    env: options.env ?? { PATH: process.env.PATH ?? "" },
+    timeout: options.timeoutMs ?? 10_000,
     maxBuffer: 1_048_576,
     encoding: "utf8",
   });

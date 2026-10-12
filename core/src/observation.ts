@@ -39,7 +39,7 @@ const digest = (text: string) => createHash("sha256").update(text).digest("hex")
 // is replaced: with no rule about where a value ends, no piece of it can be left on any line.
 const SECRET_START = /token|api[_-]?key|password|secret|authorization|Bearer|Basic|sk-/i;
 
-const redact = (text: string) => {
+export const redact = (text: string) => {
   const found = SECRET_START.exec(text);
   return found === null ? text : text.slice(0, found.index + found[0].length) + "[REDACTED]";
 };

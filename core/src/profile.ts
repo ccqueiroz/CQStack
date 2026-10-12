@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 
 export const PROFILE_FILE_NAME = "cqstack.profile.json";
+export const BINDING_FILE_NAME = "project.json";
 export const ARTIFACT_TYPES = ["research", "plan", "commit", "test", "readme", "pull_request"] as const;
 export type ArtifactType = (typeof ARTIFACT_TYPES)[number];
 
@@ -70,8 +71,17 @@ const PROFILE_SCHEMA = objectSchema(
     },
     repositories: { type: "array", minItems: 1, items: objectSchema({ id: ID_SCHEMA, path: PATH_SCHEMA }, ["id", "path"]) },
     knowledge_store: objectSchema(
-      // a leading "-" would turn the remote into a `git clone` option
-      { path: PATH_SCHEMA, remote: { type: "string", pattern: "^[^\\s-]\\S*$" }, deliveries_dir: PATH_SCHEMA },
+      // https://, ssh:// or user@host:path only: no other transport (ext:: runs a command, fd:: reads a descriptor, a local path or
+      // file:// reads this machine), no credential (no user:password@, no query or fragment), no host or user starting with "-"
+      {
+        path: PATH_SCHEMA,
+        remote: {
+          type: "string",
+          pattern:
+            "^(?:https://[A-Za-z0-9][A-Za-z0-9.-]*(?::[0-9]+)?/[^\\s?#]+|ssh://(?:[A-Za-z0-9_][A-Za-z0-9._-]*@)?[A-Za-z0-9][A-Za-z0-9.-]*(?::[0-9]+)?/[^\\s?#]+|[A-Za-z0-9_][A-Za-z0-9._-]*@[A-Za-z0-9][A-Za-z0-9.-]*:[^:\\s]\\S*)$",
+        },
+        deliveries_dir: PATH_SCHEMA,
+      },
       ["deliveries_dir"],
     ),
     state_dir: { type: "string", minLength: 1 },
@@ -107,9 +117,17 @@ function codeViolations(profile: ProjectProfile): string[] {
     ...profile.repositories.map((repository, index): [string, string] => [`/repositories/${index}/path`, repository.path]),
     ["/knowledge_store/path", profile.knowledge_store.path],
     ["/knowledge_store/deliveries_dir", profile.knowledge_store.deliveries_dir],
+    ["/state_dir", profile.state_dir],
   ];
   for (const [pointer, path] of pathFields) {
     if (path !== undefined && !isRelativePath(path)) violations.push(`${pointer} ${RELATIVE_PATH_RULE}`);
+  }
+  // state_dir is relative to the local area (decision of 2026-10-08): never the area itself, its .git or its project.json;
+  // case is ignored, since on a case-insensitive disk .GIT is .git
+  if (profile.state_dir !== undefined && isRelativePath(profile.state_dir)) {
+    const first = profile.state_dir.split("/").find((segment) => segment !== "" && segment !== ".");
+    if (first === undefined || [".git", BINDING_FILE_NAME].includes(first.toLowerCase()))
+      violations.push("/state_dir must be a folder inside the local area, not the area itself, its .git or its project.json");
   }
   return violations;
 }

@@ -1,12 +1,15 @@
 import { after } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
+import { createBus, type BusOptions } from "../src/bus.js";
 import { StateError, canonicalHash, type StateErrorCode } from "../src/storage.js";
 import { buildGraph, type RootState, type Track } from "../src/graph.js";
 import { EventLog, type Actor, type Event, type HarnessVersion } from "../src/events.js";
-import { PROFILE_FILE_NAME, loadProfile, type ProjectProfile } from "../src/profile.js";
+import { PROFILE_FILE_NAME, ProfileError, loadProfile, type ProfileErrorCode, type ProjectProfile } from "../src/profile.js";
 import { observeProcess, type Observation } from "../src/observation.js";
 
 export const V1: HarnessVersion = { tag: "v9.9.9", commit: "1".repeat(40) };
@@ -23,25 +26,164 @@ export function temporaryDirectory(): string {
   return directory;
 }
 
-function fictitiousProfile(): ProjectProfile {
-  const projectRoot = temporaryDirectory();
+// the fictitious profile of the tests, written as cqstack.profile.json in projectRoot (a new temporary folder by default)
+export function writeProject(
+  fields: { project_id?: string; state_dir?: string; path?: string; remote?: string; language?: string } = {},
+  projectRoot = temporaryDirectory(),
+): string {
+  const { project_id = "acme-toy", state_dir, path, remote, language = "en" } = fields;
   writeFileSync(
     join(projectRoot, PROFILE_FILE_NAME),
     JSON.stringify({
-      project_id: "acme-toy",
-      language: { default: "en", by_artifact: {} },
+      project_id,
+      language: { default: language, by_artifact: {} },
       commit_identity: { name: "Ada Example", email: "ada@example.com" },
       providers_required: ["alpha-llm"],
       repositories: [{ id: "app", path: "." }],
-      knowledge_store: { deliveries_dir: "deliveries" },
+      knowledge_store: { deliveries_dir: "deliveries", ...(path === undefined ? {} : { path }), ...(remote === undefined ? {} : { remote }) },
+      ...(state_dir === undefined ? {} : { state_dir }),
     }),
   );
-  return loadProfile(projectRoot);
+  return projectRoot;
 }
-export const PROFILE = fictitiousProfile();
+export const PROFILE: ProjectProfile = loadProfile(writeProject());
 
 export function expectStateError(action: () => unknown, code: StateErrorCode, label = ""): void {
   assert.throws(action, (error: unknown) => error instanceof StateError && error.code === code, `${code} ${label}`);
+}
+
+export function expectRejection(promise: Promise<unknown>, code: StateErrorCode | ProfileErrorCode, label = ""): Promise<void> {
+  return assert.rejects(
+    promise,
+    (error: unknown) => (error instanceof StateError || error instanceof ProfileError) && error.code === code,
+    `${code} ${label}`,
+  );
+}
+
+// Only PATH and fixed -c options: the user's git configuration never signs, prompts or prints hints in the setup of a test, and
+// no background maintenance after a commit leaves a lock file that a snapshot would catch.
+export function gitIn(directory: string, ...args: string[]): string {
+  return execFileSync(
+    "git",
+    [
+      "-c", "user.name=Test",
+      "-c", "user.email=test@example.com",
+      "-c", "commit.gpgsign=false",
+      "-c", "tag.gpgsign=false",
+      "-c", "init.defaultBranch=main",
+      "-c", "maintenance.auto=false",
+      "-c", "gc.auto=0",
+      ...args,
+    ],
+    { cwd: directory, env: { PATH: process.env.PATH ?? "" }, stdio: "pipe", encoding: "utf8" },
+  );
+}
+
+// a stand-in harness clone: a git repository with one commit and, by default, a tag on it
+export function fakeClone(tag: string | null = "v7.7.7", cloneRoot = temporaryDirectory()): { cloneRoot: string; version: HarnessVersion } {
+  gitIn(cloneRoot, "init", "--quiet");
+  gitIn(cloneRoot, "commit", "--allow-empty", "--quiet", "-m", "clone");
+  if (tag !== null) gitIn(cloneRoot, "tag", tag);
+  return { cloneRoot, version: { tag, commit: gitIn(cloneRoot, "rev-parse", "HEAD").trim() } };
+}
+
+// A home folder whose git configuration rewrites https://example.invalid/ to the bare repositories under <home>/remotes and allows
+// the file transport, so no clone test reaches the network (.invalid never resolves); the code under test does not know this file.
+export function testHome(extraConfig = ""): string {
+  const home = temporaryDirectory();
+  mkdirSync(join(home, "remotes"));
+  writeFileSync(
+    join(home, ".gitconfig"),
+    `[url "${join(home, "remotes")}/"]\n\tinsteadOf = https://example.invalid/\n[protocol "file"]\n\tallow = always\n${extraConfig}`,
+  );
+  return home;
+}
+
+// <home>/remotes/<name>.git, a bare repository with one commit holding files; returns the commit
+export function bareRemote(home: string, name: string, files: Record<string, string> = { "memory.md": "remote\n" }): string {
+  const work = temporaryDirectory();
+  gitIn(work, "init", "--quiet");
+  for (const [path, content] of Object.entries(files)) {
+    mkdirSync(dirname(join(work, path)), { recursive: true });
+    writeFileSync(join(work, path), content);
+  }
+  gitIn(work, "add", "--all");
+  gitIn(work, "commit", "--quiet", "-m", "remote");
+  gitIn(work, "clone", "--quiet", "--bare", work, join(home, "remotes", `${name}.git`));
+  return gitIn(work, "rev-parse", "HEAD").trim();
+}
+
+// every entry under directory without following links: folders by path, files also by size, mtime and sha256, links by target
+export function snapshot(directory: string): string[] {
+  const entries: string[] = [];
+  const walk = (relativePath: string) => {
+    const path = join(directory, relativePath);
+    const stats = lstatSync(path);
+    if (stats.isSymbolicLink()) entries.push(`${relativePath} link ${readlinkSync(path)}`);
+    else if (stats.isDirectory()) {
+      entries.push(`${relativePath} dir`);
+      for (const name of readdirSync(path).sort()) walk(join(relativePath, name));
+    } else entries.push(`${relativePath} file ${stats.size} ${stats.mtimeMs} ${createHash("sha256").update(readFileSync(path)).digest("hex")}`);
+  };
+  walk(".");
+  return entries;
+}
+
+// A git on PATH that records the arguments and the environment of each call in log, one JSON line each, runs the JavaScript
+// given in before (with fs and the arguments in args), then hands the call to the git found on PATH before it.
+export async function withGitShim<T>(
+  action: (calls: () => Array<{ args: string[]; env: Record<string, string> }>) => Promise<T>,
+  before = "",
+): Promise<T> {
+  const directory = temporaryDirectory();
+  const log = join(directory, "calls.jsonl");
+  const realGit = execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).trim();
+  writeFileSync(
+    join(directory, "git"),
+    `#!${process.execPath}\n` +
+      `const fs = require("node:fs"); const args = process.argv.slice(2);\n` +
+      `fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({ args, env: process.env }) + "\\n");\n` +
+      `${before}\n` +
+      `process.exit(require("node:child_process").spawnSync(${JSON.stringify(realGit)}, args, { stdio: "inherit" }).status ?? 1);\n`,
+    { mode: 0o755 },
+  );
+  const calls = () =>
+    existsSync(log) ? readFileSync(log, "utf8").split("\n").filter((line) => line !== "").map((line) => JSON.parse(line)) : [];
+  const originalPath = process.env.PATH;
+  process.env.PATH = directory + delimiter + (originalPath ?? "");
+  try {
+    return await action(calls);
+  } finally {
+    process.env.PATH = originalPath;
+  }
+}
+
+export const areaOf = (home: string, projectId = "acme-toy") => join(home, ".cqstack", "projects", projectId);
+
+// a refused boot leaves every given folder as it was: no new entry, every file byte for byte and with the same mtime
+export async function expectRefusedUnchanged(options: BusOptions, code: StateErrorCode | ProfileErrorCode, folders: string[], label = ""): Promise<void> {
+  const before = folders.map(snapshot);
+  await expectRejection(createBus(options), code, label);
+  assert.deepEqual(folders.map(snapshot), before, `${code} ${label}`);
+}
+export const repositoryTop = (folder: string) => gitIn(folder, "rev-parse", "--show-toplevel").trim();
+export const hasCommit = (folder: string) => {
+  try {
+    gitIn(folder, "rev-parse", "--verify", "--quiet", "HEAD");
+    return true;
+  } catch {
+    return false;
+  }
+};
+export const gitView = (folder: string) => gitIn(folder, "status", "--porcelain", "--untracked-files=all") + gitIn(folder, "ls-files");
+export const bindingOf = (home: string) => JSON.parse(readFileSync(join(areaOf(home), "project.json"), "utf8"));
+// a store made by hand, with one commit, as memory restored without the harness
+export function storeWithCommit(folder: string): void {
+  mkdirSync(folder, { recursive: true });
+  gitIn(folder, "init", "--quiet");
+  writeFileSync(join(folder, "memory.md"), "kept\n");
+  gitIn(folder, "add", "memory.md");
+  gitIn(folder, "commit", "--quiet", "-m", "memory");
 }
 
 export function withCwd(directory: string, action: () => void): void {
